@@ -64,6 +64,7 @@ interface WorkflowStore {
   // Copy/Paste operations
   copySelectedNodes: () => void;
   pasteNodes: (offset?: XYPosition) => void;
+  clearClipboard: () => void;
 
   // Execution
   isRunning: boolean;
@@ -306,6 +307,10 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       nodes: [...updatedNodes, ...newNodes] as WorkflowNode[],
       edges: [...edges, ...newEdges],
     });
+  },
+
+  clearClipboard: () => {
+    set({ clipboard: null });
   },
 
   getNodeById: (id: string) => {

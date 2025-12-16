@@ -9,7 +9,8 @@
       "Bash(tree:*)",
       "Bash(npx tsc:*)",
       "Bash(cat:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(xargs cat:*)"
     ],
     "deny": [],
     "ask": []

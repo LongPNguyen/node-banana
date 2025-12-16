@@ -98,7 +98,7 @@ interface ConnectionDropState {
 function WorkflowCanvasInner() {
   const { nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, updateNodeData, loadWorkflow, getNodeById, addToGlobalHistory } =
     useWorkflowStore();
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, getViewport } = useReactFlow();
   const [isDragOver, setIsDragOver] = useState(false);
   const [dropType, setDropType] = useState<"image" | "workflow" | "node" | null>(null);
   const [connectionDrop, setConnectionDrop] = useState<ConnectionDropState | null>(null);
@@ -455,8 +455,8 @@ function WorkflowCanvasInner() {
     setConnectionDrop(null);
   }, []);
 
-  // Get copy/paste functions from store
-  const { copySelectedNodes, pasteNodes } = useWorkflowStore();
+  // Get copy/paste functions and clipboard from store
+  const { copySelectedNodes, pasteNodes, clearClipboard, clipboard } = useWorkflowStore();
 
   // Keyboard shortcuts for copy/paste and stacking selected nodes
   useEffect(() => {
@@ -479,7 +479,66 @@ function WorkflowCanvasInner() {
       // Handle paste (Ctrl/Cmd + V)
       if ((event.ctrlKey || event.metaKey) && event.key === "v") {
         event.preventDefault();
-        pasteNodes();
+
+        // If we have nodes in the internal clipboard, prioritize pasting those
+        if (clipboard && clipboard.nodes.length > 0) {
+          pasteNodes();
+          clearClipboard(); // Clear so next paste uses system clipboard
+          return;
+        }
+
+        // Helper to get viewport center position in flow coordinates
+        const getViewportCenter = () => {
+          const viewport = getViewport();
+          const centerX = (-viewport.x + window.innerWidth / 2) / viewport.zoom;
+          const centerY = (-viewport.y + window.innerHeight / 2) / viewport.zoom;
+          return { centerX, centerY };
+        };
+
+        // Check system clipboard for images first, then text
+        navigator.clipboard.read().then(async (items) => {
+          for (const item of items) {
+            // Check for image
+            const imageType = item.types.find(type => type.startsWith('image/'));
+            if (imageType) {
+              const blob = await item.getType(imageType);
+              const reader = new FileReader();
+              reader.onload = (e) => {
+                const dataUrl = e.target?.result as string;
+                const { centerX, centerY } = getViewportCenter();
+
+                const img = new Image();
+                img.onload = () => {
+                  // ImageInput node default dimensions: 300x280
+                  const nodeId = addNode("imageInput", { x: centerX - 150, y: centerY - 140 });
+                  updateNodeData(nodeId, {
+                    image: dataUrl,
+                    filename: `pasted-${Date.now()}.png`,
+                    dimensions: { width: img.width, height: img.height },
+                  });
+                };
+                img.src = dataUrl;
+              };
+              reader.readAsDataURL(blob);
+              return; // Exit after handling image
+            }
+
+            // Check for text
+            if (item.types.includes('text/plain')) {
+              const blob = await item.getType('text/plain');
+              const text = await blob.text();
+              if (text.trim()) {
+                const { centerX, centerY } = getViewportCenter();
+                // Prompt node default dimensions: 320x220
+                const nodeId = addNode("prompt", { x: centerX - 160, y: centerY - 110 });
+                updateNodeData(nodeId, { prompt: text });
+                return; // Exit after handling text
+              }
+            }
+          }
+        }).catch(() => {
+          // Clipboard API failed - nothing to paste
+        });
         return;
       }
 
@@ -578,7 +637,7 @@ function WorkflowCanvasInner() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [nodes, onNodesChange, copySelectedNodes, pasteNodes]);
+  }, [nodes, onNodesChange, copySelectedNodes, pasteNodes, clearClipboard, clipboard, getViewport, addNode, updateNodeData]);
 
   const handleDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
