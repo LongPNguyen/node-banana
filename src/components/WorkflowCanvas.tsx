@@ -15,6 +15,7 @@ import {
   OnConnectEnd,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { useShallow } from "zustand/react/shallow";
 
 import { useWorkflowStore, WorkflowFile } from "@/store/workflowStore";
 import {
@@ -24,6 +25,8 @@ import {
   NanoBananaNode,
   LLMGenerateNode,
   OutputNode,
+  VideoGenerateNode,
+  ElevenLabsNode,
 } from "./nodes";
 import { EditableEdge } from "./edges";
 import { ConnectionDropMenu, MenuAction } from "./ConnectionDropMenu";
@@ -40,6 +43,8 @@ const nodeTypes: NodeTypes = {
   nanoBanana: NanoBananaNode,
   llmGenerate: LLMGenerateNode,
   output: OutputNode,
+  videoGenerate: VideoGenerateNode,
+  elevenLabs: ElevenLabsNode,
 };
 
 const edgeTypes: EdgeTypes = {
@@ -55,11 +60,18 @@ const isValidConnection = (connection: Edge | Connection): boolean => {
   const sourceHandle = connection.sourceHandle;
   const targetHandle = connection.targetHandle;
 
-  // Strict type matching: image <-> image, text <-> text
+  // Strict type matching: image <-> image, text <-> text/context, video <-> video, audio <-> audio
   if (sourceHandle === "image" && targetHandle !== "image") {
     return false;
   }
-  if (sourceHandle === "text" && targetHandle !== "text") {
+  // Text sources can connect to text OR context targets
+  if (sourceHandle === "text" && targetHandle !== "text" && targetHandle !== "context") {
+    return false;
+  }
+  if (sourceHandle === "video" && targetHandle !== "video") {
+    return false;
+  }
+  if (sourceHandle === "audio" && targetHandle !== "audio") {
     return false;
   }
 
@@ -78,9 +90,13 @@ const getNodeHandles = (nodeType: string): { inputs: string[]; outputs: string[]
     case "nanoBanana":
       return { inputs: ["image", "text"], outputs: ["image"] };
     case "llmGenerate":
-      return { inputs: ["text", "image"], outputs: ["text"] };
+      return { inputs: ["text", "context", "image"], outputs: ["text", "image"] };
+    case "videoGenerate":
+      return { inputs: ["image", "text"], outputs: ["video", "image"] };
+    case "elevenLabs":
+      return { inputs: ["text"], outputs: ["audio"] };
     case "output":
-      return { inputs: ["image"], outputs: [] };
+      return { inputs: ["image", "video", "audio"], outputs: [] };
     default:
       return { inputs: [], outputs: [] };
   }
@@ -89,15 +105,40 @@ const getNodeHandles = (nodeType: string): { inputs: string[]; outputs: string[]
 interface ConnectionDropState {
   position: { x: number; y: number };
   flowPosition: { x: number; y: number };
-  handleType: "image" | "text" | null;
+  handleType: "image" | "text" | "context" | "video" | "audio" | null;
   connectionType: "source" | "target";
   sourceNodeId: string | null;
   sourceHandleId: string | null;
 }
 
 function WorkflowCanvasInner() {
-  const { nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, updateNodeData, loadWorkflow, getNodeById, addToGlobalHistory } =
-    useWorkflowStore();
+  // Use shallow comparison for data to prevent unnecessary re-renders
+  const { nodes, edges, clipboard } = useWorkflowStore(
+    useShallow((state) => ({
+      nodes: state.nodes,
+      edges: state.edges,
+      clipboard: state.clipboard,
+    }))
+  );
+  
+  // Functions are stable references, select them separately
+  const onNodesChange = useWorkflowStore((state) => state.onNodesChange);
+  const onEdgesChange = useWorkflowStore((state) => state.onEdgesChange);
+  const onConnect = useWorkflowStore((state) => state.onConnect);
+  const addNode = useWorkflowStore((state) => state.addNode);
+  const updateNodeData = useWorkflowStore((state) => state.updateNodeData);
+  const loadWorkflow = useWorkflowStore((state) => state.loadWorkflow);
+  const getNodeById = useWorkflowStore((state) => state.getNodeById);
+  const addToGlobalHistory = useWorkflowStore((state) => state.addToGlobalHistory);
+  const beginHistoryGroup = useWorkflowStore((state) => state.beginHistoryGroup);
+  const endHistoryGroup = useWorkflowStore((state) => state.endHistoryGroup);
+  const copySelectedNodes = useWorkflowStore((state) => state.copySelectedNodes);
+  const pasteNodes = useWorkflowStore((state) => state.pasteNodes);
+  const clearClipboard = useWorkflowStore((state) => state.clearClipboard);
+  const undo = useWorkflowStore((state) => state.undo);
+  const redo = useWorkflowStore((state) => state.redo);
+  const sidebarOpen = useWorkflowStore((state) => state.sidebarOpen);
+
   const { screenToFlowPosition, getViewport } = useReactFlow();
   const [isDragOver, setIsDragOver] = useState(false);
   const [dropType, setDropType] = useState<"image" | "workflow" | "node" | null>(null);
@@ -116,6 +157,8 @@ function WorkflowCanvasInner() {
       // If the source node is selected and there are multiple selected nodes,
       // connect all selected nodes that have the same source handle type
       if (sourceNode?.selected && selectedNodes.length > 1 && connection.sourceHandle) {
+        beginHistoryGroup();
+        try {
         selectedNodes.forEach((node) => {
           // Skip if this is already the connection source
           if (node.id === connection.source) {
@@ -142,12 +185,15 @@ function WorkflowCanvasInner() {
             onConnect(multiConnection);
           }
         });
+        } finally {
+          endHistoryGroup();
+        }
       } else {
         // Single connection
         onConnect(connection);
       }
     },
-    [onConnect, nodes]
+    [onConnect, nodes, beginHistoryGroup, endHistoryGroup]
   );
 
   // Handle connection dropped on empty space or on a node
@@ -268,6 +314,9 @@ function WorkflowCanvasInner() {
           return;
         }
 
+        // Treat the entire split operation as one undo step
+        beginHistoryGroup();
+        try {
         // Calculate layout for the new nodes
         const nodeWidth = 300;
         const nodeHeight = 280;
@@ -309,6 +358,9 @@ function WorkflowCanvasInner() {
         });
 
         console.log(`[SplitGrid] Created ${images.length} nodes from ${grid.rows}x${grid.cols} grid (confidence: ${Math.round(grid.confidence * 100)}%)`);
+        } finally {
+          endHistoryGroup();
+        }
       } catch (error) {
         console.error("[SplitGrid] Error:", error);
         alert("Failed to split image grid: " + (error instanceof Error ? error.message : "Unknown error"));
@@ -316,7 +368,7 @@ function WorkflowCanvasInner() {
         setIsSplitting(false);
       }
     },
-    [getNodeById, addNode, updateNodeData, addToGlobalHistory]
+    [getNodeById, addNode, updateNodeData, addToGlobalHistory, beginHistoryGroup, endHistoryGroup]
   );
 
   // Helper to get image from a node
@@ -331,6 +383,10 @@ function WorkflowCanvasInner() {
         return (node.data as { outputImage: string | null }).outputImage;
       case "nanoBanana":
         return (node.data as { outputImage: string | null }).outputImage;
+      case "llmGenerate": {
+        const images = (node.data as { outputImages?: string[] }).outputImages;
+        return images && images.length > 0 ? images[0] : null;
+      }
       default:
         return null;
     }
@@ -355,6 +411,9 @@ function WorkflowCanvasInner() {
       // Regular node creation
       const nodeType = selection.type as NodeType;
 
+      // Treat create+connect as one undo step
+      beginHistoryGroup();
+      try {
       // Create the new node at the drop position
       const newNodeId = addNode(nodeType, flowPosition);
 
@@ -376,11 +435,17 @@ function WorkflowCanvasInner() {
           targetHandleId = "image";
         } else if (nodeType === "nanoBanana") {
           targetHandleId = "image";
+        } else if (nodeType === "videoGenerate") {
+          targetHandleId = "image";
+          sourceHandleIdForNewNode = "image";
+        } else if (nodeType === "llmGenerate") {
+          targetHandleId = "image";
+          sourceHandleIdForNewNode = "image";
         } else if (nodeType === "imageInput") {
           sourceHandleIdForNewNode = "image";
         }
       } else if (handleType === "text") {
-        if (nodeType === "nanoBanana" || nodeType === "llmGenerate") {
+        if (nodeType === "nanoBanana" || nodeType === "llmGenerate" || nodeType === "videoGenerate" || nodeType === "elevenLabs") {
           targetHandleId = "text";
           // llmGenerate also has a text output
           if (nodeType === "llmGenerate") {
@@ -388,6 +453,18 @@ function WorkflowCanvasInner() {
           }
         } else if (nodeType === "prompt") {
           sourceHandleIdForNewNode = "text";
+        }
+      } else if (handleType === "video") {
+        if (nodeType === "output") {
+          targetHandleId = "video";
+        } else if (nodeType === "videoGenerate") {
+          sourceHandleIdForNewNode = "video";
+        }
+      } else if (handleType === "audio") {
+        if (nodeType === "output") {
+          targetHandleId = "audio";
+        } else if (nodeType === "elevenLabs") {
+          sourceHandleIdForNewNode = "audio";
         }
       }
 
@@ -446,26 +523,48 @@ function WorkflowCanvasInner() {
         }
       }
 
+      } finally {
+        endHistoryGroup();
       setConnectionDrop(null);
+      }
     },
-    [connectionDrop, addNode, onConnect, nodes, handleSplitGridAction, getImageFromNode, updateNodeData]
+    [connectionDrop, addNode, onConnect, nodes, handleSplitGridAction, getImageFromNode, updateNodeData, beginHistoryGroup, endHistoryGroup]
   );
 
   const handleCloseDropMenu = useCallback(() => {
     setConnectionDrop(null);
   }, []);
 
-  // Get copy/paste functions and clipboard from store
-  const { copySelectedNodes, pasteNodes, clearClipboard, clipboard } = useWorkflowStore();
-
   // Keyboard shortcuts for copy/paste and stacking selected nodes
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       // Ignore if user is typing in an input field
+      const target = event.target;
       if (
-        event.target instanceof HTMLInputElement ||
-        event.target instanceof HTMLTextAreaElement
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        (target instanceof HTMLElement && target.isContentEditable)
       ) {
+        return;
+      }
+
+      // Undo / Redo
+      const isMod = event.ctrlKey || event.metaKey;
+      const key = event.key.toLowerCase();
+      if (isMod && key === "z") {
+        event.preventDefault();
+        if (event.shiftKey) {
+          redo();
+        } else {
+          undo();
+        }
+        return;
+      }
+      // Windows/Linux convention
+      if (isMod && key === "y") {
+        event.preventDefault();
+        redo();
         return;
       }
 
@@ -637,7 +736,7 @@ function WorkflowCanvasInner() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [nodes, onNodesChange, copySelectedNodes, pasteNodes, clearClipboard, clipboard, getViewport, addNode, updateNodeData]);
+  }, [nodes, onNodesChange, copySelectedNodes, pasteNodes, clearClipboard, clipboard, getViewport, addNode, updateNodeData, undo, redo]);
 
   const handleDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -795,7 +894,7 @@ function WorkflowCanvasInner() {
   return (
     <div
       ref={reactFlowWrapper}
-      className={`flex-1 bg-canvas-bg relative ${isDragOver ? "ring-2 ring-inset ring-blue-500" : ""}`}
+      className={`flex-1 bg-canvas-bg relative transition-[margin-left] duration-300 ${sidebarOpen ? "ml-64" : ""} ${isDragOver ? "ring-2 ring-inset ring-blue-500" : ""}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -865,6 +964,10 @@ function WorkflowCanvasInner() {
                 return "#22c55e";
               case "llmGenerate":
                 return "#06b6d4";
+              case "videoGenerate":
+                return "#f43f5e";
+              case "elevenLabs":
+                return "#8b5cf6";
               case "output":
                 return "#ef4444";
               default:

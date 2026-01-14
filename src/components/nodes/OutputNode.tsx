@@ -1,13 +1,13 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, memo } from "react";
 import { Handle, Position, NodeProps, Node } from "@xyflow/react";
 import { BaseNode } from "./BaseNode";
 import { OutputNodeData } from "@/types";
 
 type OutputNodeType = Node<OutputNodeData, "output">;
 
-export function OutputNode({ id, data, selected }: NodeProps<OutputNodeType>) {
+export const OutputNode = memo(({ id, data, selected }: NodeProps<OutputNodeType>) => {
   const nodeData = data;
   const [showLightbox, setShowLightbox] = useState(false);
 
@@ -88,4 +88,6 @@ export function OutputNode({ id, data, selected }: NodeProps<OutputNodeType>) {
       )}
     </>
   );
-}
+});
+
+OutputNode.displayName = "OutputNode";

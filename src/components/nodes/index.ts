@@ -4,3 +4,6 @@ export { PromptNode } from "./PromptNode";
 export { NanoBananaNode } from "./NanoBananaNode";
 export { LLMGenerateNode } from "./LLMGenerateNode";
 export { OutputNode } from "./OutputNode";
+export { VideoGenerateNode } from "./VideoGenerateNode";
+export { ElevenLabsNode } from "./ElevenLabsNode";
+export { ExecuteButton } from "./ExecuteButton";

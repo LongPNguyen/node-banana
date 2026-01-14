@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, memo } from "react";
 import { Handle, Position, NodeProps, Node } from "@xyflow/react";
 import { BaseNode } from "./BaseNode";
+import { ExecuteButton } from "./ExecuteButton";
 import { useWorkflowStore } from "@/store/workflowStore";
 import { NanoBananaNodeData, AspectRatio, Resolution, ModelType } from "@/types";
 
@@ -19,7 +20,7 @@ const MODELS: { value: ModelType; label: string }[] = [
 
 type NanoBananaNodeType = Node<NanoBananaNodeData, "nanoBanana">;
 
-export function NanoBananaNode({ id, data, selected }: NodeProps<NanoBananaNodeType>) {
+export const NanoBananaNode = memo(({ id, data, selected }: NodeProps<NanoBananaNodeType>) => {
   const nodeData = data;
   const updateNodeData = useWorkflowStore((state) => state.updateNodeData);
 
@@ -238,7 +239,12 @@ export function NanoBananaNode({ id, data, selected }: NodeProps<NanoBananaNodeT
             <span>Google Search</span>
           </label>
         )}
+
+        {/* Execute button */}
+        <ExecuteButton nodeId={id} />
       </div>
     </BaseNode>
   );
-}
+});
+
+NanoBananaNode.displayName = "NanoBananaNode";

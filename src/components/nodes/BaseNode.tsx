@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useCallback } from "react";
+import { ReactNode, useCallback, memo } from "react";
 import { NodeResizer, OnResize, useReactFlow } from "@xyflow/react";
 import { useWorkflowStore } from "@/store/workflowStore";
 
@@ -16,7 +16,7 @@ interface BaseNodeProps {
   minHeight?: number;
 }
 
-export function BaseNode({
+export const BaseNode = memo(({
   id,
   title,
   children,
@@ -26,7 +26,7 @@ export function BaseNode({
   className = "",
   minWidth = 180,
   minHeight = 100,
-}: BaseNodeProps) {
+}: BaseNodeProps) => {
   const currentNodeId = useWorkflowStore((state) => state.currentNodeId);
   const isCurrentlyExecuting = currentNodeId === id;
   const { getNodes, setNodes } = useReactFlow();
@@ -85,4 +85,6 @@ export function BaseNode({
       </div>
     </>
   );
-}
+});
+
+BaseNode.displayName = "BaseNode";

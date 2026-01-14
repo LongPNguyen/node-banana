@@ -7,7 +7,9 @@ export type NodeType =
   | "prompt"
   | "nanoBanana"
   | "llmGenerate"
-  | "output";
+  | "output"
+  | "videoGenerate"
+  | "elevenLabs";
 
 // Aspect Ratios (supported by both Nano Banana and Nano Banana Pro)
 export type AspectRatio = "1:1" | "2:3" | "3:2" | "3:4" | "4:3" | "4:5" | "5:4" | "9:16" | "16:9" | "21:9";
@@ -22,11 +24,8 @@ export type ModelType = "nano-banana" | "nano-banana-pro";
 export type LLMProvider = "google" | "openai";
 
 // LLM Model Options
-export type LLMModelType =
-  | "gemini-2.5-flash"
-  | "gemini-3-pro-preview"
-  | "gpt-4.1-mini"
-  | "gpt-4.1-nano";
+// Keep this as a string to make it easy to add/try new models without editing this type.
+export type LLMModelType = string;
 
 // Node Status
 export type NodeStatus = "idle" | "loading" | "complete" | "error";
@@ -131,12 +130,16 @@ export interface NanoBananaNodeData extends BaseNodeData {
 
 // LLM Generate Node Data (Text Generation)
 export interface LLMGenerateNodeData extends BaseNodeData {
-  inputPrompt: string | null;
+  inputPrompt: string | null;     // instruction/prompt text input
+  inputContext: string | null;    // context/content text input (combined with prompt)
+  inputImages: string[]; // optional multimodal context
   outputText: string | null;
+  outputImages: string[]; // passthrough of connected images for downstream nodes
   provider: LLMProvider;
   model: LLMModelType;
   temperature: number;
   maxTokens: number;
+  useGoogleSearch: boolean; // Enable Google Search grounding (Gemini 3 only)
   status: NodeStatus;
   error: string | null;
 }
@@ -146,6 +149,26 @@ export interface OutputNodeData extends BaseNodeData {
   image: string | null;
 }
 
+// Video Generation Node Data
+export interface VideoGenerateNodeData extends BaseNodeData {
+  inputImage: string | null; // start frame
+  inputPrompt: string | null;
+  outputVideo: string | null; // video data URL or URL
+  lastFrame: string | null;   // extracted last frame for chaining
+  duration: number;
+  status: NodeStatus;
+  error: string | null;
+}
+
+// ElevenLabs Node Data
+export interface ElevenLabsNodeData extends BaseNodeData {
+  inputText: string | null;
+  voiceId: string;
+  outputAudio: string | null;
+  status: NodeStatus;
+  error: string | null;
+}
+
 // Union of all node data types
 export type WorkflowNodeData =
   | ImageInputNodeData
@@ -153,7 +176,9 @@ export type WorkflowNodeData =
   | PromptNodeData
   | NanoBananaNodeData
   | LLMGenerateNodeData
-  | OutputNodeData;
+  | OutputNodeData
+  | VideoGenerateNodeData
+  | ElevenLabsNodeData;
 
 // Workflow Node with typed data
 export type WorkflowNode = Node<WorkflowNodeData, NodeType>;
@@ -167,7 +192,7 @@ export interface WorkflowEdgeData extends Record<string, unknown> {
 export type WorkflowEdge = Edge<WorkflowEdgeData>;
 
 // Handle Types for connections
-export type HandleType = "image" | "text";
+export type HandleType = "image" | "text" | "context";
 
 // API Request/Response types for Image Generation
 export interface GenerateRequest {
@@ -188,10 +213,12 @@ export interface GenerateResponse {
 // API Request/Response types for LLM Text Generation
 export interface LLMGenerateRequest {
   prompt: string;
+  images?: string[]; // optional multimodal context images (data URLs)
   provider: LLMProvider;
   model: LLMModelType;
   temperature?: number;
   maxTokens?: number;
+  useGoogleSearch?: boolean; // Enable Google Search grounding (Gemini 3 only)
 }
 
 export interface LLMGenerateResponse {
@@ -210,4 +237,12 @@ export interface ToolOptions {
   fillColor: string | null;
   fontSize: number;
   opacity: number;
+}
+
+// Workflow Metadata for sidebar
+export interface WorkflowMetadata {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
 }

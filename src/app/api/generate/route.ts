@@ -17,16 +17,17 @@ export async function POST(request: NextRequest) {
   console.log(`[API:${requestId}] Timestamp: ${new Date().toISOString()}`);
 
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
+    // Check header first, then fall back to environment variable
+    const apiKey = request.headers.get("x-gemini-api-key") || process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
       console.error(`[API:${requestId}] ❌ No API key configured`);
       return NextResponse.json<GenerateResponse>(
         {
           success: false,
-          error: "API key not configured. Add GEMINI_API_KEY to .env.local",
+          error: "Gemini API key not configured. Add it in Settings or set GEMINI_API_KEY in .env.local",
         },
-        { status: 500 }
+        { status: 401 }
       );
     }
 
@@ -42,20 +43,19 @@ export async function POST(request: NextRequest) {
     console.log(`[API:${requestId}]   - Resolution: ${resolution || 'default'}`);
     console.log(`[API:${requestId}]   - Google Search: ${useGoogleSearch || false}`);
 
-    if (!images || images.length === 0 || !prompt) {
-      console.error(`[API:${requestId}] ❌ Validation failed: missing images or prompt`);
+    if (!prompt) {
+      console.error(`[API:${requestId}] ❌ Validation failed: missing prompt`);
       return NextResponse.json<GenerateResponse>(
         {
           success: false,
-          error: "At least one image and prompt are required",
+          error: "Prompt is required",
         },
         { status: 400 }
       );
     }
 
-    console.log(`[API:${requestId}] Extracting image data...`);
-    // Extract base64 data and MIME types from data URLs
-    const imageData = images.map((image, idx) => {
+    // Extract base64 data and MIME types from data URLs (if any images provided)
+    const imageData = (images || []).map((image, idx) => {
       if (image.includes("base64,")) {
         const [header, data] = image.split("base64,");
         // Extract MIME type from header (e.g., "data:image/png;" -> "image/png")
@@ -67,6 +67,12 @@ export async function POST(request: NextRequest) {
       console.log(`[API:${requestId}]   Image ${idx + 1}: No base64 header, assuming PNG, ${(image.length / 1024).toFixed(2)}KB`);
       return { data: image, mimeType: "image/png" };
     });
+
+    if (imageData.length > 0) {
+      console.log(`[API:${requestId}] Extracted ${imageData.length} image(s)`);
+    } else {
+      console.log(`[API:${requestId}] No reference images provided (text-only generation)`);
+    }
 
     // Initialize Gemini client
     console.log(`[API:${requestId}] Initializing Gemini client...`);
@@ -83,7 +89,7 @@ export async function POST(request: NextRequest) {
         },
       })),
     ];
-    console.log(`[API:${requestId}] Request parts count: ${requestParts.length} (1 text + ${imageData.length} images)`);
+    console.log(`[API:${requestId}] Request parts count: ${requestParts.length} (1 text${imageData.length > 0 ? ` + ${imageData.length} images` : ''})`);
 
     // Build config object based on model capabilities
     console.log(`[API:${requestId}] Building generation config...`);
