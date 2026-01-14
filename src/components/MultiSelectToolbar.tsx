@@ -2,18 +2,33 @@
 
 import { useReactFlow } from "@xyflow/react";
 import { useWorkflowStore } from "@/store/workflowStore";
-import { useMemo } from "react";
+import { useMemo, useCallback } from "react";
+import JSZip from "jszip";
+import type {
+  ImageInputNodeData,
+  AnnotationNodeData,
+  NanoBananaNodeData,
+  OutputNodeData,
+} from "@/types";
 
 const STACK_GAP = 20;
 
 export function MultiSelectToolbar() {
-  const { nodes, onNodesChange } = useWorkflowStore();
+  const { nodes, onNodesChange, createGroup, removeNodesFromGroup } = useWorkflowStore();
   const { getViewport } = useReactFlow();
 
   const selectedNodes = useMemo(
     () => nodes.filter((node) => node.selected),
     [nodes]
   );
+
+  // Check if any selected nodes are in a group
+  const selectedNodeGroups = useMemo(() => {
+    const groupIds = new Set(selectedNodes.map((n) => n.groupId).filter(Boolean));
+    return [...groupIds];
+  }, [selectedNodes]);
+
+  const someInGroup = selectedNodeGroups.length > 0;
 
   // Calculate toolbar position (centered above selected nodes)
   const toolbarPosition = useMemo(() => {
@@ -138,6 +153,68 @@ export function MultiSelectToolbar() {
     });
   };
 
+  const handleCreateGroup = () => {
+    const nodeIds = selectedNodes.map((n) => n.id);
+    createGroup(nodeIds);
+  };
+
+  const handleUngroup = () => {
+    const nodeIds = selectedNodes.map((n) => n.id);
+    removeNodesFromGroup(nodeIds);
+  };
+
+  const handleDownloadImages = useCallback(async () => {
+    // Extract images from selected nodes based on node type
+    const images: { data: string; name: string }[] = [];
+
+    selectedNodes.forEach((node, index) => {
+      let imageData: string | null = null;
+
+      switch (node.type) {
+        case "imageInput":
+          imageData = (node.data as ImageInputNodeData).image;
+          break;
+        case "annotation":
+          imageData = (node.data as AnnotationNodeData).outputImage;
+          break;
+        case "nanoBanana":
+          imageData = (node.data as NanoBananaNodeData).outputImage;
+          break;
+        case "output":
+          imageData = (node.data as OutputNodeData).image;
+          break;
+      }
+
+      if (imageData) {
+        images.push({
+          data: imageData,
+          name: `image-${index + 1}.png`,
+        });
+      }
+    });
+
+    if (images.length === 0) return;
+
+    // Create ZIP file
+    const zip = new JSZip();
+    images.forEach(({ data, name }) => {
+      // Remove data URL prefix to get raw base64
+      const base64Data = data.replace(/^data:image\/\w+;base64,/, "");
+      zip.file(name, base64Data, { base64: true });
+    });
+
+    // Generate and download
+    const blob = await zip.generateAsync({ type: "blob" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `images-${Date.now()}.zip`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [selectedNodes]);
+
   if (!toolbarPosition || selectedNodes.length < 2) return null;
 
   return (
@@ -174,6 +251,46 @@ export function MultiSelectToolbar() {
       >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
+        </svg>
+      </button>
+
+      {/* Separator */}
+      <div className="w-px h-4 bg-neutral-600 mx-0.5" />
+
+      {/* Group/Ungroup buttons */}
+      {someInGroup ? (
+        <button
+          onClick={handleUngroup}
+          className="p-1.5 rounded hover:bg-neutral-700 text-neutral-400 hover:text-neutral-100 transition-colors"
+          title="Remove from group"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25" />
+          </svg>
+        </button>
+      ) : (
+        <button
+          onClick={handleCreateGroup}
+          className="p-1.5 rounded hover:bg-neutral-700 text-neutral-400 hover:text-neutral-100 transition-colors"
+          title="Create group"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 7.125C2.25 6.504 2.754 6 3.375 6h6c.621 0 1.125.504 1.125 1.125v3.75c0 .621-.504 1.125-1.125 1.125h-6a1.125 1.125 0 01-1.125-1.125v-3.75zM14.25 8.625c0-.621.504-1.125 1.125-1.125h5.25c.621 0 1.125.504 1.125 1.125v8.25c0 .621-.504 1.125-1.125 1.125h-5.25a1.125 1.125 0 01-1.125-1.125v-8.25zM3.75 16.125c0-.621.504-1.125 1.125-1.125h5.25c.621 0 1.125.504 1.125 1.125v2.25c0 .621-.504 1.125-1.125 1.125h-5.25a1.125 1.125 0 01-1.125-1.125v-2.25z" />
+          </svg>
+        </button>
+      )}
+
+      {/* Separator */}
+      <div className="w-px h-4 bg-neutral-600 mx-0.5" />
+
+      {/* Download images button */}
+      <button
+        onClick={handleDownloadImages}
+        className="p-1.5 rounded hover:bg-neutral-700 text-neutral-400 hover:text-neutral-100 transition-colors"
+        title="Download images as ZIP"
+      >
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
         </svg>
       </button>
     </div>

@@ -193,7 +193,24 @@ export const ImageInputNode = memo(({ id, data, selected }: NodeProps<ImageInput
   }, [id, updateNodeData]);
 
   return (
-    <BaseNode id={id} title="Image" selected={selected}>
+    <BaseNode
+      id={id}
+      title="Image"
+      customTitle={nodeData.customTitle}
+      comment={nodeData.comment}
+      onCustomTitleChange={(title) => updateNodeData(id, { customTitle: title || undefined })}
+      onCommentChange={(comment) => updateNodeData(id, { comment: comment || undefined })}
+      selected={selected}
+    >
+      {/* Reference input handle for visual links from Split Grid node */}
+      <Handle
+        type="target"
+        position={Position.Left}
+        id="reference"
+        data-handletype="reference"
+        className="!bg-gray-500"
+      />
+
       <input
         ref={fileInputRef}
         type="file"

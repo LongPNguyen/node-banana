@@ -1,17 +1,21 @@
 # Node Banana
 
-> **Important note:** This is in early development and hasn't been tested off my machines,it probably has some issues. Use Chrome. 
+> **Important note:** This is in early development, it probably has some issues. Use Chrome. For support or raising any issues join the [discord](https://discord.com/invite/89Nr6EKkTf).
 
 Node Banana is node-based workflow application for generating images with NBP. Build image generation pipelines by connecting nodes on a visual canvas. Built mainly with Opus 4.5.
 
+![Node Banana Screenshot](public/node-banana.png)
+
 ## Features
 
+- **AI Quickstart** - Generate complete workflows from natural language descriptions or choose from preset templates
 - **Visual Node Editor** - Drag-and-drop nodes onto an infinite canvas with pan and zoom
 - **Image Annotation** - Full-screen editor with drawing tools (rectangles, circles, arrows, freehand, text)
 - **AI Image Generation** - Generate images using Google Gemini models
 - **Text Generation** - Generate text using Google Gemini or OpenAI models
 - **Workflow Chaining** - Connect multiple nodes to create complex pipelines
 - **Save/Load Workflows** - Export and import workflows as JSON files
+- **Group Locking** - Lock node groups to skip them during execution
 
 ## Tech Stack
 
@@ -82,6 +86,19 @@ The `/examples` directory contains some example workflow files from my personal 
 - **Text** handles connect to **Text** handles only
 - Image inputs on generation nodes accept multiple connections
 - Text inputs accept single connections
+
+## Testing
+
+Run the test suite with:
+
+```bash
+npm test              # Watch mode
+npm run test:run      # Single run
+npm run test:coverage # With coverage report
+```
+
+## Contributions
+PRs are welcome, please pull the latest changes from develop before creating a PR and make it to the develop branch, not master. Not that I'm primarily making this for my own workflows, if the PR conflicts with my own plans I'll politely reject it. If you want to collaborate, consider joining the Discord and we can hash something out. 
 
 ## License
 

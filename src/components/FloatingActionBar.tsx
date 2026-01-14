@@ -1,9 +1,22 @@
 "use client";
 
 import { useRef, useState, useEffect, useMemo } from "react";
-import { useWorkflowStore, EdgeStyle, WorkflowFile } from "@/store/workflowStore";
+import { useWorkflowStore } from "@/store/workflowStore";
 import { NodeType } from "@/types";
 import { useReactFlow } from "@xyflow/react";
+
+// Get the center of the React Flow pane in screen coordinates
+function getPaneCenter() {
+  const pane = document.querySelector('.react-flow');
+  if (pane) {
+    const rect = pane.getBoundingClientRect();
+    return {
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+    };
+  }
+  return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+}
 
 interface NodeButtonProps {
   type: NodeType;
@@ -15,12 +28,10 @@ function NodeButton({ type, label }: NodeButtonProps) {
   const { screenToFlowPosition } = useReactFlow();
 
   const handleClick = () => {
-    const centerX = window.innerWidth / 2;
-    const centerY = window.innerHeight / 2;
-
+    const center = getPaneCenter();
     const position = screenToFlowPosition({
-      x: centerX + Math.random() * 100 - 50,
-      y: centerY + Math.random() * 100 - 50,
+      x: center.x + Math.random() * 100 - 50,
+      y: center.y + Math.random() * 100 - 50,
     });
 
     addNode(type, position);
@@ -66,12 +77,10 @@ function GenerateComboButton() {
   }, [isOpen]);
 
   const handleAddNode = (type: NodeType) => {
-    const centerX = window.innerWidth / 2;
-    const centerY = window.innerHeight / 2;
-
+    const center = getPaneCenter();
     const position = screenToFlowPosition({
-      x: centerX + Math.random() * 100 - 50,
-      y: centerY + Math.random() * 100 - 50,
+      x: center.x + Math.random() * 100 - 50,
+      y: center.y + Math.random() * 100 - 50,
     });
 
     addNode(type, position);
@@ -155,9 +164,16 @@ function GenerateComboButton() {
 }
 
 export function FloatingActionBar() {
-  const { nodes, isRunning, executeWorkflow, regenerateNode, stopWorkflow, validateWorkflow, edgeStyle, setEdgeStyle, saveWorkflow, loadWorkflow } =
-    useWorkflowStore();
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const {
+    nodes,
+    isRunning,
+    executeWorkflow,
+    regenerateNode,
+    stopWorkflow,
+    validateWorkflow,
+    edgeStyle,
+    setEdgeStyle,
+  } = useWorkflowStore();
   const [runMenuOpen, setRunMenuOpen] = useState(false);
   const runMenuRef = useRef<HTMLDivElement>(null);
 
@@ -212,74 +228,14 @@ export function FloatingActionBar() {
     }
   };
 
-  const handleSave = () => {
-    saveWorkflow();
-  };
-
-  const handleLoadClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const workflow = JSON.parse(event.target?.result as string) as WorkflowFile;
-        if (workflow.version && workflow.nodes && workflow.edges) {
-          loadWorkflow(workflow);
-        } else {
-          alert("Invalid workflow file format");
-        }
-      } catch {
-        alert("Failed to parse workflow file");
-      }
-    };
-    reader.readAsText(file);
-
-    // Reset input so same file can be loaded again
-    e.target.value = "";
-  };
-
   return (
     <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50">
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".json"
-        onChange={handleFileChange}
-        className="hidden"
-      />
       <div className="flex items-center gap-0.5 bg-neutral-800/95 backdrop-blur-sm rounded-lg shadow-lg border border-neutral-700/80 px-1.5 py-1">
         <NodeButton type="imageInput" label="Image" />
         <NodeButton type="annotation" label="Annotate" />
         <NodeButton type="prompt" label="Prompt" />
         <GenerateComboButton />
         <NodeButton type="output" label="Output" />
-
-        <div className="w-px h-5 bg-neutral-600 mx-1.5" />
-
-        <button
-          onClick={handleSave}
-          title="Save workflow"
-          className="p-1.5 text-neutral-400 hover:text-neutral-100 hover:bg-neutral-700 rounded transition-colors"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-          </svg>
-        </button>
-
-        <button
-          onClick={handleLoadClick}
-          title="Load workflow"
-          className="p-1.5 text-neutral-400 hover:text-neutral-100 hover:bg-neutral-700 rounded transition-colors"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-          </svg>
-        </button>
 
         <div className="w-px h-5 bg-neutral-600 mx-1.5" />
 
