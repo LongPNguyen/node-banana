@@ -1,19 +1,32 @@
 "use client";
 
-import { useCallback, memo } from "react";
+import { useCallback, memo, useRef, useEffect, useState } from "react";
 import { Handle, Position, NodeProps, Node } from "@xyflow/react";
 import { BaseNode } from "./BaseNode";
 import { ExecuteButton } from "./ExecuteButton";
 import { useWorkflowStore } from "@/store/workflowStore";
+import { useSettingsStore } from "@/store/settingsStore";
 import { ElevenLabsNodeData } from "@/types";
 
 type ElevenLabsNodeType = Node<ElevenLabsNodeData, "elevenLabs">;
 
-const VOICES = [
-  { id: "pNInz6obpg8nEByWQX7X", name: "Adam" },
-  { id: "21m00Tcm4TlvDq8ikWAM", name: "Rachel" },
-  { id: "EXAVITQu4vr4xnSDxMaL", name: "Bella" },
-  { id: "VR6AewMgYgzn73nuRIBy", name: "Josh" },
+interface Voice {
+  id: string;
+  name: string;
+  previewUrl: string | null;
+  category: string;
+  accent: string | null;
+  description: string | null;
+  gender: string | null;
+  age: string | null;
+}
+
+// Fallback voices if API fails
+const FALLBACK_VOICES: Voice[] = [
+  { id: "pNInz6obpg8nEByWQX7X", name: "Adam", previewUrl: null, category: "premade", accent: "american", description: "deep", gender: "male", age: "middle aged" },
+  { id: "21m00Tcm4TlvDq8ikWAM", name: "Rachel", previewUrl: null, category: "premade", accent: "american", description: "calm", gender: "female", age: "young" },
+  { id: "EXAVITQu4vr4xnSDxMaL", name: "Bella", previewUrl: null, category: "premade", accent: "american", description: "soft", gender: "female", age: "young" },
+  { id: "VR6AewMgYgzn73nuRIBy", name: "Josh", previewUrl: null, category: "premade", accent: "american", description: "deep", gender: "male", age: "young" },
 ];
 
 export const ElevenLabsNode = memo(({ id, data, selected }: NodeProps<ElevenLabsNodeType>) => {
@@ -22,12 +35,69 @@ export const ElevenLabsNode = memo(({ id, data, selected }: NodeProps<ElevenLabs
   const regenerateNode = useWorkflowStore((state) => state.regenerateNode);
   const isRunning = useWorkflowStore((state) => state.isRunning);
 
+  const previewAudioRef = useRef<HTMLAudioElement>(null);
+  const [voices, setVoices] = useState<Voice[]>(FALLBACK_VOICES);
+  const [isLoadingVoices, setIsLoadingVoices] = useState(false);
+  const [voicesLoaded, setVoicesLoaded] = useState(false);
+  const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
+
+  // Fetch voices from ElevenLabs API
+  useEffect(() => {
+    if (voicesLoaded) return;
+
+    const fetchVoices = async () => {
+      setIsLoadingVoices(true);
+      try {
+        const { elevenLabsApiKey } = useSettingsStore.getState();
+        const response = await fetch("/api/elevenlabs-voices", {
+          method: "GET",
+          headers: {
+            ...(elevenLabsApiKey && { "x-elevenlabs-api-key": elevenLabsApiKey }),
+          },
+        });
+
+        const result = await response.json();
+        if (result.success && result.voices?.length > 0) {
+          setVoices(result.voices);
+          // If current voiceId is not in list, select first voice
+          if (!result.voices.some((v: Voice) => v.id === nodeData.voiceId)) {
+            updateNodeData(id, { voiceId: result.voices[0].id });
+          }
+        }
+      } catch (error) {
+        console.error("[ElevenLabs] Failed to fetch voices:", error);
+      } finally {
+        setIsLoadingVoices(false);
+        setVoicesLoaded(true);
+      }
+    };
+
+    fetchVoices();
+  }, [id, nodeData.voiceId, updateNodeData, voicesLoaded]);
+
   const handleVoiceChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
       updateNodeData(id, { voiceId: e.target.value });
     },
     [id, updateNodeData]
   );
+
+  const handlePreview = useCallback(() => {
+    const currentVoice = voices.find(v => v.id === nodeData.voiceId);
+    if (!currentVoice?.previewUrl) return;
+
+    if (previewAudioRef.current) {
+      if (isPreviewPlaying) {
+        previewAudioRef.current.pause();
+        previewAudioRef.current.currentTime = 0;
+        setIsPreviewPlaying(false);
+      } else {
+        previewAudioRef.current.src = currentVoice.previewUrl;
+        previewAudioRef.current.play();
+        setIsPreviewPlaying(true);
+      }
+    }
+  }, [voices, nodeData.voiceId, isPreviewPlaying]);
 
   const handleRegenerate = useCallback(() => {
     regenerateNode(id);
@@ -37,6 +107,25 @@ export const ElevenLabsNode = memo(({ id, data, selected }: NodeProps<ElevenLabs
     updateNodeData(id, { outputAudio: null, status: "idle", error: null });
   }, [id, updateNodeData]);
 
+  const currentVoice = voices.find(v => v.id === nodeData.voiceId);
+  const hasPreview = !!currentVoice?.previewUrl;
+
+  // Group voices by category
+  const groupedVoices = voices.reduce((acc, voice) => {
+    const category = voice.category || "other";
+    if (!acc[category]) acc[category] = [];
+    acc[category].push(voice);
+    return acc;
+  }, {} as Record<string, Voice[]>);
+
+  const categoryLabels: Record<string, string> = {
+    cloned: "Your Cloned Voices",
+    generated: "Generated Voices",
+    premade: "Default Voices",
+    professional: "Professional Voices",
+    other: "Other Voices",
+  };
+
   return (
     <BaseNode
       id={id}
@@ -44,6 +133,13 @@ export const ElevenLabsNode = memo(({ id, data, selected }: NodeProps<ElevenLabs
       selected={selected}
       hasError={nodeData.status === "error"}
     >
+      {/* Hidden audio element for preview */}
+      <audio
+        ref={previewAudioRef}
+        onEnded={() => setIsPreviewPlaying(false)}
+        className="hidden"
+      />
+
       {/* Text input (Script) */}
       <Handle
         type="target"
@@ -111,18 +207,54 @@ export const ElevenLabsNode = memo(({ id, data, selected }: NodeProps<ElevenLabs
           )}
         </div>
 
-        {/* Voice Selector */}
-        <select
-          value={nodeData.voiceId}
-          onChange={handleVoiceChange}
-          className="w-full text-[10px] py-1 px-1.5 border border-neutral-700 rounded bg-neutral-900/50 focus:outline-none focus:ring-1 focus:ring-neutral-600 text-neutral-300 shrink-0"
-        >
-          {VOICES.map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.name}
-            </option>
-          ))}
-        </select>
+        {/* Voice Selector with Preview */}
+        <div className="flex items-center gap-1">
+          <select
+            value={nodeData.voiceId}
+            onChange={handleVoiceChange}
+            disabled={isLoadingVoices}
+            className="nodrag flex-1 text-[10px] py-1 px-1.5 border border-neutral-700 rounded bg-neutral-900/50 focus:outline-none focus:ring-1 focus:ring-neutral-600 text-neutral-300 shrink-0"
+          >
+            {isLoadingVoices ? (
+              <option>Loading...</option>
+            ) : (
+              Object.entries(groupedVoices).map(([category, categoryVoices]) => (
+                <optgroup key={category} label={categoryLabels[category] || category}>
+                  {categoryVoices.map(voice => (
+                    <option key={voice.id} value={voice.id}>
+                      {voice.name}
+                      {voice.gender && voice.accent ? ` (${voice.gender}, ${voice.accent})` : ""}
+                    </option>
+                  ))}
+                </optgroup>
+              ))
+            )}
+          </select>
+          {/* Preview Button */}
+          <button
+            onClick={handlePreview}
+            disabled={!hasPreview}
+            className={`nodrag w-6 h-6 flex items-center justify-center rounded border transition-colors ${
+              isPreviewPlaying
+                ? "bg-green-600 border-green-500 text-white"
+                : hasPreview
+                  ? "bg-neutral-800 border-neutral-700 text-neutral-400 hover:text-green-400 hover:border-green-600"
+                  : "bg-neutral-800/50 border-neutral-700/50 text-neutral-600 cursor-not-allowed"
+            }`}
+            title={hasPreview ? (isPreviewPlaying ? "Stop" : "Preview") : "No preview"}
+          >
+            {isPreviewPlaying ? (
+              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                <rect x="6" y="4" width="4" height="16" />
+                <rect x="14" y="4" width="4" height="16" />
+              </svg>
+            ) : (
+              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            )}
+          </button>
+        </div>
 
         {/* Execute button */}
         <ExecuteButton nodeId={id} />
@@ -132,4 +264,3 @@ export const ElevenLabsNode = memo(({ id, data, selected }: NodeProps<ElevenLabs
 });
 
 ElevenLabsNode.displayName = "ElevenLabsNode";
-

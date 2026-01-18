@@ -102,6 +102,7 @@ const createAnnotationData = () => ({
 
 const createOutputData = () => ({
   image: null,
+  video: null,
 });
 
 // Content for each template at each level

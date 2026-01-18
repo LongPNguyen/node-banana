@@ -12,4 +12,7 @@ export { VideoStitchNode } from "./VideoStitchNode";
 export { VideoUpscaleNode } from "./VideoUpscaleNode";
 export { AudioProcessNode } from "./AudioProcessNode";
 export { CaptionNode } from "./CaptionNode";
+export { VoiceSwapNode } from "./VoiceSwapNode";
+export { SoundEffectsNode } from "./SoundEffectsNode";
+export { MusicGenerateNode } from "./MusicGenerateNode";
 export { ExecuteButton } from "./ExecuteButton";

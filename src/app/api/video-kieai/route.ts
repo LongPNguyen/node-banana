@@ -195,8 +195,8 @@ export async function POST(request: NextRequest) {
     // Get the Kie AI model ID (default to fast)
     const modelId = MODEL_IDS[model || "kieai-veo3-fast"];
 
-    // Get API key from header
-    const apiKey = request.headers.get("x-kieai-api-key");
+    // Get API key from header first, then fallback to env
+    const apiKey = request.headers.get("x-kieai-api-key") || process.env.KIEAI_API_KEY;
 
     if (!apiKey) {
       return NextResponse.json(

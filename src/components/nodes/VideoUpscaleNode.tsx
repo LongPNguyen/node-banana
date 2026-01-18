@@ -27,12 +27,9 @@ export const VideoUpscaleNode = memo(({ id, data, selected }: NodeProps<VideoUps
     // Extract video from various node types
     const sourceData = sourceNode.data as Record<string, unknown>;
     if (sourceNode.type === "videoGenerate" || sourceNode.type === "videoInput") {
-      return (sourceData.outputVideo as string) || null;
+      return (sourceData.outputVideo as string) || (sourceData.video as string) || null;
     }
-    if (sourceNode.type === "videoStitch") {
-      return (sourceData.outputVideo as string) || null;
-    }
-    if (sourceNode.type === "videoUpscale") {
+    if (sourceNode.type === "videoStitch" || sourceNode.type === "videoUpscale" || sourceNode.type === "audioProcess" || sourceNode.type === "caption") {
       return (sourceData.outputVideo as string) || null;
     }
     return null;

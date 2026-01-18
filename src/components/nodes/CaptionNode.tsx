@@ -4,6 +4,7 @@ import { useCallback, memo, useRef, useEffect, useState } from "react";
 import { Handle, Position, NodeProps, Node } from "@xyflow/react";
 import { BaseNode } from "./BaseNode";
 import { useWorkflowStore } from "@/store/workflowStore";
+import { useSettingsStore } from "@/store/settingsStore";
 import { CaptionNodeData, CaptionStyle, CaptionPosition, CaptionAnimation, HighlightStyle } from "@/types";
 import { ColorPicker } from "@/components/ColorPicker";
 import { FontPicker } from "@/components/FontPicker";
@@ -296,9 +297,13 @@ export const CaptionNode = memo(({ id, data, selected }: NodeProps<CaptionNodeTy
     updateNodeData(id, { status: "loading", error: null });
 
     try {
+      const { openaiApiKey } = useSettingsStore.getState();
       const response = await fetch("/api/transcribe", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(openaiApiKey && { "x-openai-api-key": openaiApiKey }),
+        },
         body: JSON.stringify({ video: inputVideo }),
       });
 

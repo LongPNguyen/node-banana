@@ -31,7 +31,10 @@ export type NodeType =
   | "videoStitch"
   | "videoUpscale"
   | "audioProcess"
-  | "caption";
+  | "caption"
+  | "voiceSwap"
+  | "soundEffects"
+  | "musicGenerate";
 
 // Aspect Ratios (supported by both Nano Banana and Nano Banana Pro)
 export type AspectRatio = "1:1" | "2:3" | "3:2" | "3:4" | "4:3" | "4:5" | "5:4" | "9:16" | "16:9" | "21:9";
@@ -189,6 +192,7 @@ export interface LLMGenerateNodeData extends BaseNodeData {
 // Output Node Data
 export interface OutputNodeData extends BaseNodeData {
   image: string | null;
+  video: string | null; // Video output support
   imageRef?: string; // Reference for external image storage
   sourceImageRef?: string; // Reference for source image
   customTitle?: string;
@@ -303,12 +307,14 @@ export interface VideoUpscaleNodeData extends BaseNodeData {
 
 // Audio Noise Reduction Level
 export type NoiseReductionLevel = "light" | "medium" | "heavy";
+export type AudioProcessMethod = "ffmpeg" | "elevenlabs";
 
 // Audio Process Node Data - noise reduction for video audio
 export interface AudioProcessNodeData extends BaseNodeData {
   inputVideo: string | null;      // video to process (base64 data URL)
   outputVideo: string | null;     // processed video with clean audio
-  noiseReduction: NoiseReductionLevel;
+  method: AudioProcessMethod;     // ffmpeg (basic) or elevenlabs (AI)
+  noiseReduction: NoiseReductionLevel; // for ffmpeg method
   status: NodeStatus;
   error: string | null;
 }
@@ -359,6 +365,35 @@ export interface CaptionNodeData extends BaseNodeData {
   error: string | null;
 }
 
+// Voice Swap Node Data - ElevenLabs Speech-to-Speech
+export interface VoiceSwapNodeData extends BaseNodeData {
+  inputVideo: string | null;
+  outputVideo: string | null;
+  voiceId: string;
+  voiceName: string | null;
+  status: NodeStatus;
+  error: string | null;
+}
+
+// Sound Effects Node Data - ElevenLabs Sound Generation
+export interface SoundEffectsNodeData extends BaseNodeData {
+  prompt: string;
+  duration: number | null; // seconds, null = auto
+  outputAudio: string | null;
+  status: NodeStatus;
+  error: string | null;
+}
+
+// Music Generation Node Data - ElevenLabs Music Generation
+export interface MusicGenerateNodeData extends BaseNodeData {
+  prompt: string;
+  duration: number;
+  instrumental: boolean;
+  outputAudio: string | null;
+  status: NodeStatus;
+  error: string | null;
+}
+
 // Union of all node data types
 export type WorkflowNodeData =
   | ImageInputNodeData
@@ -375,7 +410,10 @@ export type WorkflowNodeData =
   | VideoStitchNodeData
   | VideoUpscaleNodeData
   | AudioProcessNodeData
-  | CaptionNodeData;
+  | CaptionNodeData
+  | VoiceSwapNodeData
+  | SoundEffectsNodeData
+  | MusicGenerateNodeData;
 
 // Workflow Node with typed data and optional groupId
 export type WorkflowNode = Node<WorkflowNodeData, NodeType> & {

@@ -33,6 +33,9 @@ import {
   VideoUpscaleNode,
   AudioProcessNode,
   CaptionNode,
+  VoiceSwapNode,
+  SoundEffectsNode,
+  MusicGenerateNode,
 } from "./nodes";
 import { EditableEdge } from "./edges";
 import { ConnectionDropMenu, MenuAction } from "./ConnectionDropMenu";
@@ -58,6 +61,9 @@ const nodeTypes: NodeTypes = {
   videoUpscale: VideoUpscaleNode,
   audioProcess: AudioProcessNode,
   caption: CaptionNode,
+  voiceSwap: VoiceSwapNode,
+  soundEffects: SoundEffectsNode,
+  musicGenerate: MusicGenerateNode,
 };
 
 const edgeTypes: EdgeTypes = {
@@ -235,7 +241,7 @@ function WorkflowCanvasInner() {
 
       const { clientX, clientY } = event as MouseEvent;
       const fromHandleId = connectionState.fromHandle?.id || null;
-      const fromHandleType = (fromHandleId === "image" || fromHandleId === "text") ? fromHandleId : null;
+      const fromHandleType = (fromHandleId === "image" || fromHandleId === "text" || fromHandleId === "video" || fromHandleId === "audio") ? fromHandleId : null;
       const isFromSource = connectionState.fromHandle?.type === "source";
 
       // Check if we dropped on a node by looking for node elements under the cursor
@@ -484,9 +490,10 @@ function WorkflowCanvasInner() {
           sourceHandleIdForNewNode = "text";
         }
       } else if (handleType === "video") {
-        if (nodeType === "output") {
+        if (nodeType === "output" || nodeType === "videoStitch" || nodeType === "audioProcess" || nodeType === "caption" || nodeType === "videoUpscale" || nodeType === "voiceSwap") {
           targetHandleId = "video";
-        } else if (nodeType === "videoGenerate") {
+        }
+        if (nodeType === "videoGenerate" || nodeType === "videoInput" || nodeType === "videoStitch" || nodeType === "audioProcess" || nodeType === "caption" || nodeType === "videoUpscale" || nodeType === "voiceSwap") {
           sourceHandleIdForNewNode = "video";
         }
       } else if (handleType === "audio") {
@@ -1028,6 +1035,12 @@ function WorkflowCanvasInner() {
                 return "#0891b2"; // cyan
               case "caption":
                 return "#f59e0b"; // amber
+              case "voiceSwap":
+                return "#a855f7"; // purple
+              case "soundEffects":
+                return "#f59e0b"; // amber
+              case "musicGenerate":
+                return "#ec4899"; // pink
               case "output":
                 return "#ef4444";
               default:

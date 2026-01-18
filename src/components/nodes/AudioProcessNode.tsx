@@ -4,7 +4,8 @@ import { useCallback, memo, useRef, useEffect, useState } from "react";
 import { Handle, Position, NodeProps, Node } from "@xyflow/react";
 import { BaseNode } from "./BaseNode";
 import { useWorkflowStore } from "@/store/workflowStore";
-import { AudioProcessNodeData, NoiseReductionLevel } from "@/types";
+import { useSettingsStore } from "@/store/settingsStore";
+import { AudioProcessNodeData, NoiseReductionLevel, AudioProcessMethod } from "@/types";
 
 type AudioProcessNodeType = Node<AudioProcessNodeData, "audioProcess">;
 
@@ -29,7 +30,7 @@ export const AudioProcessNode = memo(({ id, data, selected }: NodeProps<AudioPro
     if (sourceNode.type === "videoGenerate" || sourceNode.type === "videoInput") {
       return (sourceData.outputVideo as string) || (sourceData.video as string) || null;
     }
-    if (sourceNode.type === "videoStitch" || sourceNode.type === "videoUpscale" || sourceNode.type === "audioProcess") {
+    if (sourceNode.type === "videoStitch" || sourceNode.type === "videoUpscale" || sourceNode.type === "audioProcess" || sourceNode.type === "caption") {
       return (sourceData.outputVideo as string) || null;
     }
     return null;
@@ -43,6 +44,10 @@ export const AudioProcessNode = memo(({ id, data, selected }: NodeProps<AudioPro
     }
   }, [edges, nodes, id, getInputVideo, nodeData.inputVideo, updateNodeData]);
 
+  const handleMethodChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    updateNodeData(id, { method: e.target.value as AudioProcessMethod });
+  }, [id, updateNodeData]);
+
   const handleLevelChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
     updateNodeData(id, { noiseReduction: e.target.value as NoiseReductionLevel });
   }, [id, updateNodeData]);
@@ -54,26 +59,54 @@ export const AudioProcessNode = memo(({ id, data, selected }: NodeProps<AudioPro
     setIsProcessing(true);
     updateNodeData(id, { status: "loading", error: null });
 
-    try {
-      const response = await fetch("/api/audio-denoise", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          video: inputVideo,
-          noiseReduction: nodeData.noiseReduction,
-        }),
-      });
+    const method = nodeData.method || "elevenlabs";
 
-      const result = await response.json();
-      if (result.success) {
-        updateNodeData(id, {
-          outputVideo: result.video,
-          status: "complete",
+    try {
+      if (method === "elevenlabs") {
+        // Use ElevenLabs AI Audio Isolation
+        const { elevenLabsApiKey } = useSettingsStore.getState();
+        const response = await fetch("/api/audio-isolate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(elevenLabsApiKey && { "x-elevenlabs-api-key": elevenLabsApiKey }),
+          },
+          body: JSON.stringify({ video: inputVideo }),
         });
-        console.log(`[AudioProcess] Applied ${result.noiseReduction} noise reduction`);
+
+        const result = await response.json();
+        if (result.success) {
+          updateNodeData(id, {
+            outputVideo: result.video,
+            status: "complete",
+          });
+          console.log("[AudioProcess] AI audio isolation complete");
+        } else {
+          updateNodeData(id, { status: "error", error: result.error });
+          console.error("[AudioProcess] AI isolation failed:", result.error);
+        }
       } else {
-        updateNodeData(id, { status: "error", error: result.error });
-        console.error("[AudioProcess] Failed:", result.error);
+        // Use FFmpeg noise reduction
+        const response = await fetch("/api/audio-denoise", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            video: inputVideo,
+            noiseReduction: nodeData.noiseReduction,
+          }),
+        });
+
+        const result = await response.json();
+        if (result.success) {
+          updateNodeData(id, {
+            outputVideo: result.video,
+            status: "complete",
+          });
+          console.log(`[AudioProcess] FFmpeg ${result.noiseReduction} noise reduction complete`);
+        } else {
+          updateNodeData(id, { status: "error", error: result.error });
+          console.error("[AudioProcess] FFmpeg failed:", result.error);
+        }
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : "Unknown error";
@@ -82,11 +115,12 @@ export const AudioProcessNode = memo(({ id, data, selected }: NodeProps<AudioPro
     } finally {
       setIsProcessing(false);
     }
-  }, [id, nodeData.noiseReduction, getInputVideo, isProcessing, updateNodeData]);
+  }, [id, nodeData.noiseReduction, nodeData.method, getInputVideo, isProcessing, updateNodeData]);
 
   const inputVideo = getInputVideo();
   const hasInput = !!inputVideo;
   const hasOutput = !!nodeData.outputVideo;
+  const method = nodeData.method || "elevenlabs";
 
   return (
     <BaseNode
@@ -95,7 +129,7 @@ export const AudioProcessNode = memo(({ id, data, selected }: NodeProps<AudioPro
       selected={selected}
       hasError={nodeData.status === "error"}
       minWidth={320}
-      minHeight={320}
+      minHeight={360}
     >
       {/* Video Input Handle */}
       <Handle
@@ -135,35 +169,60 @@ export const AudioProcessNode = memo(({ id, data, selected }: NodeProps<AudioPro
           )}
         </div>
 
-        {/* Settings */}
+        {/* Method Selector */}
         <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <label className="text-[9px] text-neutral-500 uppercase tracking-wider flex-shrink-0">Level</label>
+            <label className="text-[9px] text-neutral-500 uppercase tracking-wider flex-shrink-0">Method</label>
             <select
-              value={nodeData.noiseReduction}
-              onChange={handleLevelChange}
+              value={method}
+              onChange={handleMethodChange}
               className="flex-1 text-[10px] py-1 px-1.5 border border-neutral-700 rounded bg-neutral-900/50 text-neutral-300"
             >
-              <option value="light">Light - Subtle cleanup</option>
-              <option value="medium">Medium - Balanced</option>
-              <option value="heavy">Heavy - Aggressive</option>
+              <option value="elevenlabs">AI Isolation (ElevenLabs)</option>
+              <option value="ffmpeg">Basic (FFmpeg)</option>
             </select>
           </div>
 
-          <div className="text-[9px] text-neutral-500 leading-relaxed">
-            {nodeData.noiseReduction === "light" && "Gentle filtering, preserves voice clarity"}
-            {nodeData.noiseReduction === "medium" && "Good balance of noise removal and audio quality"}
-            {nodeData.noiseReduction === "heavy" && "Maximum noise removal, may affect voice quality"}
-          </div>
+          {method === "elevenlabs" ? (
+            <div className="text-[9px] text-neutral-500 leading-relaxed p-2 bg-cyan-900/20 border border-cyan-800/30 rounded">
+              <span className="text-cyan-400 font-medium">AI-powered</span> voice isolation. Removes background noise while preserving voice clarity. Best quality.
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-2">
+                <label className="text-[9px] text-neutral-500 uppercase tracking-wider flex-shrink-0">Level</label>
+                <select
+                  value={nodeData.noiseReduction}
+                  onChange={handleLevelChange}
+                  className="flex-1 text-[10px] py-1 px-1.5 border border-neutral-700 rounded bg-neutral-900/50 text-neutral-300"
+                >
+                  <option value="light">Light - Subtle cleanup</option>
+                  <option value="medium">Medium - Balanced</option>
+                  <option value="heavy">Heavy - Aggressive</option>
+                </select>
+              </div>
+              <div className="text-[9px] text-neutral-500 leading-relaxed">
+                {nodeData.noiseReduction === "light" && "Gentle filtering, preserves voice clarity"}
+                {nodeData.noiseReduction === "medium" && "Good balance of noise removal and audio quality"}
+                {nodeData.noiseReduction === "heavy" && "Maximum noise removal, may affect voice quality"}
+              </div>
+            </>
+          )}
         </div>
 
         {/* Process Button */}
         <button
           onClick={handleProcess}
           disabled={!hasInput || isProcessing}
-          className="nodrag w-full py-2 text-[10px] font-medium bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed rounded text-white transition-colors"
+          className={`nodrag w-full py-2 text-[10px] font-medium rounded text-white transition-colors ${
+            method === "elevenlabs"
+              ? "bg-cyan-600 hover:bg-cyan-500"
+              : "bg-neutral-600 hover:bg-neutral-500"
+          } disabled:opacity-50 disabled:cursor-not-allowed`}
         >
-          {isProcessing ? "Processing..." : "Reduce Noise"}
+          {isProcessing
+            ? (method === "elevenlabs" ? "Isolating Voice..." : "Processing...")
+            : (method === "elevenlabs" ? "Isolate Voice (AI)" : "Reduce Noise")}
         </button>
 
         {/* Error Display */}
@@ -177,7 +236,9 @@ export const AudioProcessNode = memo(({ id, data, selected }: NodeProps<AudioPro
         {nodeData.status === "loading" && (
           <div className="flex items-center justify-center gap-2 p-2 bg-cyan-900/30 border border-cyan-700/50 rounded">
             <div className="w-3 h-3 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
-            <span className="text-[9px] text-cyan-400">Processing audio...</span>
+            <span className="text-[9px] text-cyan-400">
+              {method === "elevenlabs" ? "AI isolating voice..." : "Processing audio..."}
+            </span>
           </div>
         )}
 
@@ -194,7 +255,7 @@ export const AudioProcessNode = memo(({ id, data, selected }: NodeProps<AudioPro
                 playsInline
               />
               <span className="absolute top-1 right-1 text-[8px] bg-green-600/80 px-1 rounded text-white">
-                Cleaned
+                {method === "elevenlabs" ? "AI Cleaned" : "Cleaned"}
               </span>
             </div>
           </div>

@@ -27,6 +27,9 @@ const VALID_NODE_TYPES: NodeType[] = [
   "videoUpscale",
   "audioProcess",
   "caption",
+  "voiceSwap",
+  "soundEffects",
+  "musicGenerate",
 ];
 
 const VALID_HANDLE_TYPES = ["image", "text", "reference", "video", "audio"];
@@ -46,8 +49,11 @@ const DEFAULT_DIMENSIONS: Record<NodeType, { width: number; height: number }> = 
   syllableChunker: { width: 340, height: 320 },
   videoStitch: { width: 340, height: 380 },
   videoUpscale: { width: 320, height: 340 },
-  audioProcess: { width: 320, height: 320 },
+  audioProcess: { width: 320, height: 360 },
   caption: { width: 360, height: 620 },
+  voiceSwap: { width: 340, height: 400 },
+  soundEffects: { width: 320, height: 320 },
+  musicGenerate: { width: 320, height: 380 },
 };
 
 /**
@@ -274,6 +280,7 @@ function createDefaultNodeData(type: NodeType): WorkflowNodeData {
     case "output":
       return {
         image: null,
+        video: null,
       };
     case "videoGenerate":
       return {
@@ -335,6 +342,7 @@ function createDefaultNodeData(type: NodeType): WorkflowNodeData {
       return {
         inputVideo: null,
         outputVideo: null,
+        method: "elevenlabs",
         noiseReduction: "medium",
         status: "idle",
         error: null,
@@ -365,6 +373,32 @@ function createDefaultNodeData(type: NodeType): WorkflowNodeData {
           highlightColor: "#FFFF00",
           highlightStyle: "box",
         },
+        status: "idle",
+        error: null,
+      };
+    case "voiceSwap":
+      return {
+        inputVideo: null,
+        outputVideo: null,
+        voiceId: "21m00Tcm4TlvDq8ikWAM",
+        voiceName: "Rachel",
+        status: "idle",
+        error: null,
+      };
+    case "soundEffects":
+      return {
+        prompt: "",
+        duration: null,
+        outputAudio: null,
+        status: "idle",
+        error: null,
+      };
+    case "musicGenerate":
+      return {
+        prompt: "",
+        duration: 30,
+        instrumental: true,
+        outputAudio: null,
         status: "idle",
         error: null,
       };

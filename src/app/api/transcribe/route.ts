@@ -53,11 +53,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "No video provided" }, { status: 400 });
     }
 
-    const openaiKey = process.env.OPENAI_API_KEY;
+    const openaiKey = request.headers.get("x-openai-api-key") || process.env.OPENAI_API_KEY;
     if (!openaiKey) {
       return NextResponse.json(
-        { success: false, error: "OpenAI API key not configured" },
-        { status: 500 }
+        { success: false, error: "OpenAI API key not configured. Add it in Settings." },
+        { status: 400 }
       );
     }
 

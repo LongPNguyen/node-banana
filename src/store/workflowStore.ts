@@ -27,6 +27,9 @@ import {
   VideoUpscaleNodeData,
   AudioProcessNodeData,
   CaptionNodeData,
+  VoiceSwapNodeData,
+  SoundEffectsNodeData,
+  MusicGenerateNodeData,
   WorkflowNodeData,
   ImageHistoryItem,
   WorkflowMetadata,
@@ -241,6 +244,7 @@ const createDefaultNodeData = (type: NodeType): WorkflowNodeData => {
     case "output":
       return {
         image: null,
+        video: null,
       } as OutputNodeData;
     case "videoGenerate":
       return {
@@ -320,6 +324,7 @@ const createDefaultNodeData = (type: NodeType): WorkflowNodeData => {
       return {
         inputVideo: null,
         outputVideo: null,
+        method: "elevenlabs", // Default to AI for better quality
         noiseReduction: "medium",
         status: "idle",
         error: null,
@@ -353,6 +358,32 @@ const createDefaultNodeData = (type: NodeType): WorkflowNodeData => {
         status: "idle",
         error: null,
       } as CaptionNodeData;
+    case "voiceSwap":
+      return {
+        inputVideo: null,
+        outputVideo: null,
+        voiceId: "21m00Tcm4TlvDq8ikWAM", // Rachel voice as default
+        voiceName: "Rachel",
+        status: "idle",
+        error: null,
+      } as VoiceSwapNodeData;
+    case "soundEffects":
+      return {
+        prompt: "",
+        duration: null,
+        outputAudio: null,
+        status: "idle",
+        error: null,
+      } as SoundEffectsNodeData;
+    case "musicGenerate":
+      return {
+        prompt: "",
+        duration: 30,
+        instrumental: true,
+        outputAudio: null,
+        status: "idle",
+        error: null,
+      } as MusicGenerateNodeData;
   }
 };
 
@@ -1145,8 +1176,11 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => {
       splitGrid: { width: 300, height: 320 },
       videoStitch: { width: 340, height: 380 },
       videoUpscale: { width: 320, height: 340 },
-      audioProcess: { width: 320, height: 320 },
+      audioProcess: { width: 320, height: 360 },
       caption: { width: 360, height: 620 },
+      voiceSwap: { width: 340, height: 400 },
+      soundEffects: { width: 320, height: 320 },
+      musicGenerate: { width: 320, height: 380 },
     };
 
     const { width, height } = defaultDimensions[type];
@@ -1444,6 +1478,14 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => {
             video = (sourceNode.data as VideoGenerateNodeData).outputVideo;
           } else if (sourceNode.type === "videoInput") {
             video = (sourceNode.data as VideoInputNodeData).video;
+          } else if (sourceNode.type === "videoStitch") {
+            video = (sourceNode.data as VideoStitchNodeData).outputVideo;
+          } else if (sourceNode.type === "videoUpscale") {
+            video = (sourceNode.data as VideoUpscaleNodeData).outputVideo;
+          } else if (sourceNode.type === "audioProcess") {
+            video = (sourceNode.data as AudioProcessNodeData).outputVideo;
+          } else if (sourceNode.type === "caption") {
+            video = (sourceNode.data as CaptionNodeData).outputVideo;
           }
         }
 
@@ -1806,9 +1848,9 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => {
           }
 
           case "output": {
-            const { images, video, audio } = getConnectedInputs(node.id);
+            const { images, video } = getConnectedInputs(node.id);
             if (images.length > 0) updateNodeData(node.id, { image: images[0] });
-            // Add video/audio output support here if needed
+            if (video) updateNodeData(node.id, { video });
             break;
           }
 
@@ -2021,6 +2063,82 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => {
               updateNodeData(node.id, {
                 status: "error",
                 error: error instanceof Error ? error.message : "Chunking failed",
+              });
+              set({ isRunning: false, currentNodeId: null });
+              return;
+            }
+            break;
+          }
+
+          case "caption": {
+            const { video } = getConnectedInputs(node.id);
+            if (!video) {
+              updateNodeData(node.id, { status: "error", error: "No video input connected" });
+              set({ isRunning: false, currentNodeId: null });
+              return;
+            }
+
+            const captionData = node.data as CaptionNodeData;
+            updateNodeData(node.id, { inputVideo: video, status: "loading", error: null });
+
+            try {
+              // Step 1: Transcribe the video
+              console.log("[Caption] Transcribing video...");
+              const { openaiApiKey } = useSettingsStore.getState();
+              const transcribeResponse = await fetch("/api/transcribe", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  ...(openaiApiKey && { "x-openai-api-key": openaiApiKey }),
+                },
+                body: JSON.stringify({ video }),
+                signal: abortController.signal,
+              });
+
+              const transcribeResult = await transcribeResponse.json();
+              if (!transcribeResult.success) {
+                throw new Error(transcribeResult.error || "Transcription failed");
+              }
+
+              console.log(`[Caption] Transcribed ${transcribeResult.words.length} words`);
+              updateNodeData(node.id, {
+                transcription: transcribeResult.words,
+                editedTranscript: transcribeResult.text,
+              });
+
+              // Step 2: Burn captions into video
+              console.log("[Caption] Burning captions...");
+              const burnResponse = await fetch("/api/caption-burn", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  video,
+                  words: transcribeResult.words,
+                  style: captionData.style,
+                }),
+                signal: abortController.signal,
+              });
+
+              const burnResult = await burnResponse.json();
+              if (!burnResult.success) {
+                throw new Error(burnResult.error || "Caption burning failed");
+              }
+
+              console.log("[Caption] Captions burned successfully");
+              updateNodeData(node.id, {
+                outputVideo: burnResult.video,
+                status: "complete",
+                error: null,
+              });
+            } catch (error) {
+              if (error instanceof Error && error.name === "AbortError") {
+                updateNodeData(node.id, { status: "idle", error: null });
+                set({ isRunning: false, currentNodeId: null, abortController: null });
+                return;
+              }
+              updateNodeData(node.id, {
+                status: "error",
+                error: error instanceof Error ? error.message : "Caption generation failed",
               });
               set({ isRunning: false, currentNodeId: null });
               return;
@@ -2468,6 +2586,17 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => {
         for (let iteration = 1; iteration <= iterationCount; iteration++) {
           console.log(`[Video Stitch] Starting iteration ${iteration}/${iterationCount}`);
           updateNodeData(nodeId, { currentIteration: iteration });
+
+          // IMPORTANT: Clear old outputVideo and lastFrame from ALL connected video nodes
+          // This prevents stale frames from previous runs bleeding into new generations
+          // Note: We do NOT clear inputImage as that's the user's intended input, not cached output
+          for (const videoNodeId of videoNodeIds) {
+            updateNodeData(videoNodeId, {
+              outputVideo: null,
+              lastFrame: null,
+            });
+          }
+          console.log(`[Video Stitch] Cleared previous outputs from ${videoNodeIds.length} video nodes`);
 
           // Regenerate all connected video nodes
           for (const videoNodeId of videoNodeIds) {

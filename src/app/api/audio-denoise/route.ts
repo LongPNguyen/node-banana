@@ -12,13 +12,14 @@ interface DenoiseRequest {
 }
 
 // FFmpeg filter chains by noise reduction level
+// Using gentler filters that preserve voice quality while reducing noise
 const NOISE_FILTERS: Record<string, string> = {
-  // Light: gentle high/low pass + light noise reduction
-  light: "highpass=f=80,lowpass=f=12000,afftdn=nf=-20",
-  // Medium: tighter band + stronger noise reduction
-  medium: "highpass=f=100,lowpass=f=10000,afftdn=nf=-25",
-  // Heavy: aggressive filtering + strong noise reduction + additional denoiser
-  heavy: "highpass=f=120,lowpass=f=8000,afftdn=nf=-30,anlmdn=s=7",
+  // Light: Remove subsonic rumble only, gentle noise reduction, normalize volume
+  light: "highpass=f=60,afftdn=nf=-20:nt=w,dynaudnorm=p=0.9:s=5",
+  // Medium: Slightly tighter low cut, moderate noise reduction, normalize
+  medium: "highpass=f=80,afftdn=nf=-25:nt=w,dynaudnorm=p=0.9:s=5",
+  // Heavy: More aggressive noise reduction but preserve frequency range, normalize
+  heavy: "highpass=f=80,afftdn=nf=-30:nt=w:om=o,dynaudnorm=p=0.95:s=3",
 };
 
 async function runFFmpeg(args: string[]): Promise<{ success: boolean; error?: string }> {

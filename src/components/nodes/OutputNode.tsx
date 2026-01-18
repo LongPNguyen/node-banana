@@ -13,7 +13,7 @@ export const OutputNode = memo(({ id, data, selected }: NodeProps<OutputNodeType
   const updateNodeData = useWorkflowStore((state) => state.updateNodeData);
   const [showLightbox, setShowLightbox] = useState(false);
 
-  const handleDownload = useCallback(() => {
+  const handleDownloadImage = useCallback(() => {
     if (!nodeData.image) return;
 
     const link = document.createElement("a");
@@ -23,6 +23,19 @@ export const OutputNode = memo(({ id, data, selected }: NodeProps<OutputNodeType
     link.click();
     document.body.removeChild(link);
   }, [nodeData.image]);
+
+  const handleDownloadVideo = useCallback(() => {
+    if (!nodeData.video) return;
+
+    const link = document.createElement("a");
+    link.href = nodeData.video;
+    link.download = `video-${Date.now()}.mp4`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [nodeData.video]);
+
+  const hasContent = nodeData.image || nodeData.video;
 
   return (
     <>
@@ -36,14 +49,39 @@ export const OutputNode = memo(({ id, data, selected }: NodeProps<OutputNodeType
         selected={selected}
         className="min-w-[200px]"
       >
+        {/* Image Input Handle */}
         <Handle
           type="target"
           position={Position.Left}
           id="image"
           data-handletype="image"
+          style={{ top: "40%" }}
+        />
+        {/* Video Input Handle */}
+        <Handle
+          type="target"
+          position={Position.Left}
+          id="video"
+          data-handletype="video"
+          style={{ top: "60%" }}
         />
 
-        {nodeData.image ? (
+        {nodeData.video ? (
+          <div className="flex-1 flex flex-col min-h-0 gap-2">
+            <video
+              src={nodeData.video}
+              controls
+              className="w-full rounded"
+              style={{ maxHeight: "200px" }}
+            />
+            <button
+              onClick={handleDownloadVideo}
+              className="w-full py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-[10px] font-medium rounded transition-colors shrink-0"
+            >
+              Download Video
+            </button>
+          </div>
+        ) : nodeData.image ? (
           <div className="flex-1 flex flex-col min-h-0 gap-2">
             <div
               className="relative cursor-pointer group flex-1 min-h-0"
@@ -61,7 +99,7 @@ export const OutputNode = memo(({ id, data, selected }: NodeProps<OutputNodeType
               </div>
             </div>
             <button
-              onClick={handleDownload}
+              onClick={handleDownloadImage}
               className="w-full py-1.5 bg-white hover:bg-neutral-200 text-neutral-900 text-[10px] font-medium rounded transition-colors shrink-0"
             >
               Download
@@ -69,7 +107,7 @@ export const OutputNode = memo(({ id, data, selected }: NodeProps<OutputNodeType
           </div>
         ) : (
           <div className="w-full flex-1 min-h-[144px] border border-dashed border-neutral-600 rounded flex items-center justify-center">
-            <span className="text-neutral-500 text-[10px]">Waiting for image</span>
+            <span className="text-neutral-500 text-[10px]">Connect image or video</span>
           </div>
         )}
       </BaseNode>
