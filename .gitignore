@@ -42,3 +42,6 @@ logs/*.json
 
 # .claude
 .claude/
+# Large workflow example files
+examples/*.json
+TODO-SESSION.md
