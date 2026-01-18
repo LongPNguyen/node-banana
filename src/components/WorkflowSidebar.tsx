@@ -1,8 +1,9 @@
 "use client";
 
-import { memo, useState, useCallback } from "react";
-import { useWorkflowStore } from "@/store/workflowStore";
+import { memo, useState, useCallback, useRef } from "react";
+import { useWorkflowStore, WorkflowFile } from "@/store/workflowStore";
 import { WorkflowMetadata } from "@/types";
+import { useToast } from "@/components/Toast";
 
 export const WorkflowSidebar = memo(() => {
   const sidebarOpen = useWorkflowStore((state) => state.sidebarOpen);
@@ -14,19 +15,69 @@ export const WorkflowSidebar = memo(() => {
   const deleteWorkflow = useWorkflowStore((state) => state.deleteWorkflow);
   const renameWorkflow = useWorkflowStore((state) => state.renameWorkflow);
   const saveWorkflow = useWorkflowStore((state) => state.saveWorkflow);
+  const loadWorkflow = useWorkflowStore((state) => state.loadWorkflow);
   const isRunning = useWorkflowStore((state) => state.isRunning);
+  const saveDirectoryPath = useWorkflowStore((state) => state.saveDirectoryPath);
+  const saveToProjectDirectory = useWorkflowStore((state) => state.saveToProjectDirectory);
+  const toast = useToast();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleCreateNew = useCallback(() => {
     createNewWorkflow();
   }, [createNewWorkflow]);
 
-  const handleSaveToFile = useCallback(() => {
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSaveToFile = useCallback(async () => {
     const currentWorkflow = workflowList.find((w) => w.id === currentWorkflowId);
-    saveWorkflow(currentWorkflow?.name);
-  }, [saveWorkflow, workflowList, currentWorkflowId]);
+    const workflowName = currentWorkflow?.name || "workflow";
+
+    // If we have a project directory, save directly to it
+    if (saveDirectoryPath) {
+      setIsSaving(true);
+      try {
+        const result = await saveToProjectDirectory();
+        if (result.success) {
+          toast.show(`Saved to ${result.filePath}`, "success");
+        } else {
+          toast.show(`Save failed: ${result.error}`, "error");
+        }
+      } finally {
+        setIsSaving(false);
+      }
+    } else {
+      // Fall back to download if no project directory set
+      saveWorkflow(workflowName);
+    }
+  }, [saveWorkflow, workflowList, currentWorkflowId, saveDirectoryPath, saveToProjectDirectory, toast]);
+
+  const handleUploadClick = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleFileUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const content = e.target?.result as string;
+        const workflow = JSON.parse(content) as WorkflowFile;
+        loadWorkflow(workflow);
+      } catch (error) {
+        console.error("Failed to load workflow:", error);
+        alert("Failed to load workflow. Please ensure the file is a valid workflow JSON.");
+      }
+    };
+    reader.readAsText(file);
+
+    // Reset the input so the same file can be selected again
+    event.target.value = "";
+  }, [loadWorkflow]);
 
   const handleSwitch = useCallback(
     (id: string) => {
@@ -124,13 +175,37 @@ export const WorkflowSidebar = memo(() => {
           </button>
           <button
             onClick={handleSaveToFile}
-            className="w-7 h-7 bg-blue-600 hover:bg-blue-500 rounded flex items-center justify-center text-white transition-colors"
-            title="Save workflow to file"
+            disabled={isSaving}
+            className={`w-7 h-7 ${isSaving ? "bg-blue-800" : "bg-blue-600 hover:bg-blue-500"} rounded flex items-center justify-center text-white transition-colors`}
+            title={saveDirectoryPath ? `Save to ${saveDirectoryPath} (⌘S)` : "Save workflow to file (⌘S)"}
+          >
+            {isSaving ? (
+              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+            )}
+          </button>
+          <button
+            onClick={handleUploadClick}
+            className="w-7 h-7 bg-purple-600 hover:bg-purple-500 rounded flex items-center justify-center text-white transition-colors"
+            title="Upload workflow from file"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
             </svg>
           </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
           <button
             onClick={() => setSidebarOpen(false)}
             className="w-7 h-7 bg-neutral-700 hover:bg-neutral-600 rounded flex items-center justify-center text-neutral-400 hover:text-white transition-colors"

@@ -13,6 +13,7 @@ import {
   WorkflowEdge,
   NodeType,
   ImageInputNodeData,
+  VideoInputNodeData,
   AnnotationNodeData,
   PromptNodeData,
   NanoBananaNodeData,
@@ -20,18 +21,44 @@ import {
   OutputNodeData,
   VideoGenerateNodeData,
   ElevenLabsNodeData,
+  SyllableChunkerNodeData,
+  SplitGridNodeData,
+  VideoStitchNodeData,
   WorkflowNodeData,
   ImageHistoryItem,
   WorkflowMetadata,
+  GroupColor,
 } from "@/types";
+
 import { useToast } from "@/components/Toast";
 import { useSettingsStore } from "@/store/settingsStore";
+
+// Group colors for visual styling
+export const GROUP_COLORS: Record<GroupColor, string> = {
+  neutral: "#404040",
+  blue: "#1e40af",
+  green: "#166534",
+  purple: "#6b21a8",
+  orange: "#c2410c",
+  red: "#b91c1c",
+};
+
+// Group data structure
+export interface GroupData {
+  name: string;
+  color: GroupColor;
+  position: { x: number; y: number };
+  size: { width: number; height: number };
+  locked: boolean;
+  nodeIds: string[];
+}
 
 export type EdgeStyle = "angular" | "curved";
 
 // Workflow file format
 export interface WorkflowFile {
   version: 1;
+  id?: string;
   name: string;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
@@ -58,9 +85,18 @@ interface WorkflowStore {
 
   // Multi-workflow support
   currentWorkflowId: string | null;
+  workflowId: string | null; // alias for currentWorkflowId
+  workflowName: string | null;
   workflowList: WorkflowMetadata[];
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
+
+  // External storage settings
+  saveDirectoryPath: string | null;
+  useExternalImageStorage: boolean;
+  setUseExternalImageStorage: (value: boolean) => void;
+  setSaveDirectoryPath: (path: string | null) => void;
+  setWorkflowName: (name: string | null) => void;
   createNewWorkflow: (name?: string) => string;
   switchWorkflow: (id: string) => Promise<void>;
   deleteWorkflow: (id: string) => Promise<void>;
@@ -89,6 +125,7 @@ interface WorkflowStore {
   // Edge operations
   onEdgesChange: (changes: EdgeChange<WorkflowEdge>[]) => void;
   onConnect: (connection: Connection) => void;
+  addEdgeWithType: (connection: Connection, edgeType: string) => void;
   removeEdge: (edgeId: string) => void;
   toggleEdgePause: (edgeId: string) => void;
 
@@ -108,13 +145,28 @@ interface WorkflowStore {
 
   // Save/Load
   saveWorkflow: (name?: string) => void;
+  saveToProjectDirectory: () => Promise<{ success: boolean; filePath?: string; error?: string }>;
   loadWorkflow: (workflow: WorkflowFile) => void;
   clearWorkflow: () => void;
+
+  // Cost tracking
+  incurredCost: number;
+  resetIncurredCost: () => void;
+
+  // Groups (stub - not fully implemented)
+  groups: Record<string, GroupData>;
+  createGroup: (nodeIds: string[], name?: string) => string;
+  updateGroup: (groupId: string, updates: Partial<GroupData>) => void;
+  deleteGroup: (groupId: string) => void;
+  moveGroupNodes: (groupId: string, delta: { x: number; y: number }) => void;
+  toggleGroupLock: (groupId: string) => void;
+  removeNodesFromGroup: (nodeIds: string[]) => void;
 
   // Helpers
   getNodeById: (id: string) => WorkflowNode | undefined;
   getConnectedInputs: (nodeId: string) => {
     images: string[];
+    referenceImages: string[];
     text: string | null;
     context: string | null;
     video: string | null;
@@ -139,6 +191,13 @@ const createDefaultNodeData = (type: NodeType): WorkflowNodeData => {
         filename: null,
         dimensions: null,
       } as ImageInputNodeData;
+    case "videoInput":
+      return {
+        video: null,
+        filename: null,
+        duration: null,
+        lastFrame: null,
+      } as VideoInputNodeData;
     case "annotation":
       return {
         sourceImage: null,
@@ -184,9 +243,15 @@ const createDefaultNodeData = (type: NodeType): WorkflowNodeData => {
       return {
         inputImage: null,
         inputPrompt: null,
+        inputContext: null,
+        referenceImages: [],
         outputVideo: null,
         lastFrame: null,
-        duration: 4,
+        model: "veo-3.1-fast",
+        duration: 8,
+        aspectRatio: "9:16", // Default to vertical for UGC/social content
+        resolution: "720p",
+        chunkIndex: 1, // 1-indexed for display (chunk 1, 2, 3...)
         status: "idle",
         error: null,
       } as VideoGenerateNodeData;
@@ -198,12 +263,112 @@ const createDefaultNodeData = (type: NodeType): WorkflowNodeData => {
         status: "idle",
         error: null,
       } as ElevenLabsNodeData;
+    case "syllableChunker":
+      return {
+        inputScript: null,
+        outputChunks: [],
+        selectedChunkIndex: 0,
+        targetSyllables: 40, // ~40 syllables for comfortable 8-sec video narration
+        chunkPrefix: "Dialogue: ", // prefix prepended to each chunk
+        status: "idle",
+        error: null,
+      } as SyllableChunkerNodeData;
+    case "splitGrid":
+      return {
+        sourceImage: null,
+        gridRows: 2,
+        gridCols: 3,
+        targetCount: 6,
+        defaultPrompt: "",
+        generateSettings: {
+          aspectRatio: "1:1",
+          resolution: "1K",
+          model: "nano-banana-pro",
+          useGoogleSearch: false,
+        },
+        childNodeIds: [],
+        isConfigured: false,
+        status: "idle",
+        error: null,
+      } as SplitGridNodeData;
+    case "videoStitch":
+      return {
+        inputVideos: [],
+        outputVideo: null,
+        iterationCount: 1,
+        currentIteration: 0,
+        outputFolder: null,
+        status: "idle",
+        error: null,
+      } as VideoStitchNodeData;
   }
 };
 
 let nodeIdCounter = 0;
 
 const HISTORY_LIMIT = 100;
+
+// Syllable counting helper - heuristic approach for English
+const countSyllables = (text: string): number => {
+  const words = text.toLowerCase().split(/\s+/).filter(w => w.length > 0);
+  let total = 0;
+
+  for (const word of words) {
+    // Remove non-alpha characters
+    const clean = word.replace(/[^a-z]/g, '');
+    if (clean.length === 0) continue;
+
+    // Count vowel groups
+    const vowelGroups = clean.match(/[aeiouy]+/g) || [];
+    let count = vowelGroups.length;
+
+    // Silent e at end
+    if (clean.endsWith('e') && count > 1) count--;
+
+    // Handle -le endings (bottle, apple)
+    if (clean.match(/[^aeiou]le$/)) count++;
+
+    // Minimum 1 syllable per word
+    total += Math.max(1, count);
+  }
+
+  return total;
+};
+
+// Chunk text by syllables without cutting mid-sentence
+// Strict mode: never exceed target syllables per chunk
+const chunkBySyllables = (text: string, targetSyllables: number, prefix: string = ""): string[] => {
+  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+  const chunks: string[] = [];
+  let currentChunk = '';
+  let currentSyllables = 0;
+
+  for (const sentence of sentences) {
+    const trimmedSentence = sentence.trim();
+    const sentenceSyllables = countSyllables(trimmedSentence);
+
+    // Strict: only add if it won't exceed target
+    if (currentSyllables + sentenceSyllables <= targetSyllables) {
+      currentChunk += (currentChunk ? ' ' : '') + trimmedSentence;
+      currentSyllables += sentenceSyllables;
+    } else {
+      // Push current chunk if it has content
+      if (currentChunk) chunks.push(currentChunk);
+      // Start new chunk with this sentence
+      currentChunk = trimmedSentence;
+      currentSyllables = sentenceSyllables;
+    }
+  }
+
+  if (currentChunk) chunks.push(currentChunk);
+
+  // Prepend prefix to each chunk if provided
+  if (prefix) {
+    return chunks.map(chunk => prefix + chunk);
+  }
+
+  return chunks;
+};
 
 // IndexedDB helper for multi-workflow storage
 const DB_NAME = "node-banana-db";
@@ -337,7 +502,7 @@ const loadFromIndexedDB = async (): Promise<{
 };
 
 // Multi-workflow IndexedDB helpers
-const generateWorkflowId = () => `workflow-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+export const generateWorkflowId = () => `workflow-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
 const saveWorkflowToIDB = async (workflow: StoredWorkflow): Promise<void> => {
   try {
@@ -583,8 +748,14 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => {
 
   // Multi-workflow state
   currentWorkflowId: null,
+  workflowId: null, // alias
+  workflowName: null,
   workflowList: [],
   sidebarOpen: false,
+
+  // External storage settings
+  saveDirectoryPath: null,
+  useExternalImageStorage: false,
 
         historyPast: [],
         historyFuture: [],
@@ -597,12 +768,25 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => {
   isRunning: false,
   currentNodeId: null,
   pausedAtNodeId: null,
+  incurredCost: 0,
+  groups: {},
         abortController: null,
   globalImageHistory: [],
 
   // Multi-workflow methods
   setSidebarOpen: (open: boolean) => {
     set({ sidebarOpen: open });
+  },
+
+  // External storage setters
+  setUseExternalImageStorage: (value: boolean) => {
+    set({ useExternalImageStorage: value });
+  },
+  setSaveDirectoryPath: (path: string | null) => {
+    set({ saveDirectoryPath: path });
+  },
+  setWorkflowName: (name: string | null) => {
+    set({ workflowName: name });
   },
 
   createNewWorkflow: (name?: string) => {
@@ -897,6 +1081,7 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => {
     // Default dimensions based on node type
     const defaultDimensions: Record<NodeType, { width: number; height: number }> = {
       imageInput: { width: 300, height: 280 },
+      videoInput: { width: 320, height: 320 },
       annotation: { width: 300, height: 280 },
       prompt: { width: 320, height: 220 },
       nanoBanana: { width: 300, height: 300 },
@@ -904,6 +1089,9 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => {
       output: { width: 320, height: 320 },
       videoGenerate: { width: 320, height: 380 },
       elevenLabs: { width: 300, height: 200 },
+      syllableChunker: { width: 340, height: 320 },
+      splitGrid: { width: 300, height: 320 },
+      videoStitch: { width: 340, height: 380 },
     };
 
     const { width, height } = defaultDimensions[type];
@@ -982,6 +1170,20 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => {
         {
           ...connection,
           id: `edge-${connection.source}-${connection.target}-${connection.sourceHandle || "default"}-${connection.targetHandle || "default"}`,
+        },
+        state.edges
+      ),
+    }));
+  },
+
+  addEdgeWithType: (connection: Connection, edgeType: string) => {
+    recordHistory();
+    set((state) => ({
+      edges: addEdge(
+        {
+          ...connection,
+          id: `edge-${connection.source}-${connection.target}-${connection.sourceHandle || "default"}-${connection.targetHandle || "default"}`,
+          type: edgeType,
         },
         state.edges
       ),
@@ -1085,10 +1287,32 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => {
   getConnectedInputs: (nodeId: string) => {
     const { edges, nodes } = get();
     const images: string[] = [];
+    const referenceImages: string[] = [];
     let text: string | null = null;
     let context: string | null = null;
     let video: string | null = null;
     let audio: string | null = null;
+
+    // Helper to extract image from a source node
+    const getImageFromNode = (sourceNode: WorkflowNode): string | null => {
+      if (sourceNode.type === "imageInput") {
+        return (sourceNode.data as ImageInputNodeData).image;
+      } else if (sourceNode.type === "annotation") {
+        return (sourceNode.data as AnnotationNodeData).outputImage;
+      } else if (sourceNode.type === "nanoBanana") {
+        return (sourceNode.data as NanoBananaNodeData).outputImage;
+      } else if (sourceNode.type === "llmGenerate") {
+        const sourceImages = (sourceNode.data as LLMGenerateNodeData).outputImages;
+        return sourceImages && sourceImages.length > 0 ? sourceImages[0] : null;
+      } else if (sourceNode.type === "videoGenerate") {
+        // Passthrough last frame for chaining
+        return (sourceNode.data as VideoGenerateNodeData).lastFrame;
+      } else if (sourceNode.type === "videoInput") {
+        // Output last frame from uploaded video
+        return (sourceNode.data as VideoInputNodeData).lastFrame;
+      }
+      return null;
+    };
 
     edges
       .filter((edge) => edge.target === nodeId)
@@ -1100,22 +1324,40 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => {
 
         if (handleId === "image" || !handleId) {
           // Get image from source node - collect all connected images
-          if (sourceNode.type === "imageInput") {
-            const sourceImage = (sourceNode.data as ImageInputNodeData).image;
-            if (sourceImage) images.push(sourceImage);
-          } else if (sourceNode.type === "annotation") {
-            const sourceImage = (sourceNode.data as AnnotationNodeData).outputImage;
-            if (sourceImage) images.push(sourceImage);
-          } else if (sourceNode.type === "nanoBanana") {
-            const sourceImage = (sourceNode.data as NanoBananaNodeData).outputImage;
-            if (sourceImage) images.push(sourceImage);
-          } else if (sourceNode.type === "llmGenerate") {
+          const img = getImageFromNode(sourceNode);
+          if (img) images.push(img);
+          // Also handle LLM multiple images
+          if (sourceNode.type === "llmGenerate") {
             const sourceImages = (sourceNode.data as LLMGenerateNodeData).outputImages;
-            if (sourceImages && sourceImages.length > 0) images.push(...sourceImages);
-          } else if (sourceNode.type === "videoGenerate") {
-            // Passthrough last frame for chaining
-            const sourceImage = (sourceNode.data as VideoGenerateNodeData).lastFrame;
-            if (sourceImage) images.push(sourceImage);
+            if (sourceImages && sourceImages.length > 1) {
+              images.push(...sourceImages.slice(1));
+            }
+          }
+        }
+
+        // Reference handle - for style/content reference images (separate from start frame)
+        if (handleId === "reference") {
+          const sourceHandle = edge.sourceHandle;
+
+          // If source is a videoGenerate's reference output, passthrough its reference images
+          if (sourceNode.type === "videoGenerate" && sourceHandle === "reference") {
+            // Always recursively get the source node's actual connected references
+            // Don't rely on stored data as it may be stale after connections are removed
+            const sourceNodeRefs = get().getConnectedInputs(sourceNode.id).referenceImages;
+            if (sourceNodeRefs.length > 0) {
+              referenceImages.push(...sourceNodeRefs);
+            }
+          } else {
+            // Normal image source
+            const img = getImageFromNode(sourceNode);
+            if (img) referenceImages.push(img);
+            // Also handle LLM multiple images for reference
+            if (sourceNode.type === "llmGenerate") {
+              const sourceImages = (sourceNode.data as LLMGenerateNodeData).outputImages;
+              if (sourceImages && sourceImages.length > 1) {
+                referenceImages.push(...sourceImages.slice(1));
+              }
+            }
           }
         }
 
@@ -1124,6 +1366,12 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => {
             text = (sourceNode.data as PromptNodeData).prompt;
           } else if (sourceNode.type === "llmGenerate") {
             text = (sourceNode.data as LLMGenerateNodeData).outputText;
+          } else if (sourceNode.type === "syllableChunker") {
+            // Output the selected chunk
+            const chunkerData = sourceNode.data as SyllableChunkerNodeData;
+            const chunks = chunkerData.outputChunks || [];
+            const idx = chunkerData.selectedChunkIndex || 0;
+            text = chunks[idx] || null;
           }
         }
 
@@ -1139,6 +1387,8 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => {
         if (handleId === "video") {
           if (sourceNode.type === "videoGenerate") {
             video = (sourceNode.data as VideoGenerateNodeData).outputVideo;
+          } else if (sourceNode.type === "videoInput") {
+            video = (sourceNode.data as VideoInputNodeData).video;
           }
         }
 
@@ -1149,7 +1399,7 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => {
         }
       });
 
-    return { images, text, context, video, audio };
+    return { images, referenceImages, text, context, video, audio };
   },
 
   validateWorkflow: () => {
@@ -1508,29 +1758,121 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => {
           }
 
           case "videoGenerate": {
-            const { images, text } = getConnectedInputs(node.id);
-            const image = images[0];
+            const { images, referenceImages, context } = getConnectedInputs(node.id);
+            const nodeData = node.data as VideoGenerateNodeData;
 
-            if (!image || !text) {
+            // For video chaining, prioritize last frames from upstream video nodes
+            // This ensures proper continuity when multiple images are connected
+            const imageEdges = edges.filter(e => e.target === node.id && (e.targetHandle === "image" || !e.targetHandle));
+            let firstFrame: string | null = null;
+
+            // First, look for a last frame from an upstream video node (for chaining)
+            for (const edge of imageEdges) {
+              const sourceNode = nodes.find(n => n.id === edge.source);
+              if (sourceNode?.type === "videoGenerate" || sourceNode?.type === "videoInput") {
+                const lastFrame = sourceNode.type === "videoGenerate"
+                  ? (sourceNode.data as VideoGenerateNodeData).lastFrame
+                  : (sourceNode.data as VideoInputNodeData).lastFrame;
+                if (lastFrame) {
+                  firstFrame = lastFrame;
+                  console.log(`[Video] Using last frame from ${sourceNode.type} ${sourceNode.id} for chaining`);
+                  break;
+                }
+              }
+            }
+
+            // Fall back to first available image if no video last frame found
+            if (!firstFrame && images.length > 0) {
+              firstFrame = images[0];
+              console.log(`[Video] Using first available image as start frame (no video chain detected)`);
+            }
+
+            // referenceImages come from separate reference handle (up to 3)
+            const refs = referenceImages.slice(0, 3);
+
+            // Get text input - check if connected to a syllable chunker for chunk selection
+            let text: string | null = null;
+            const textEdge = edges.find(e => e.target === node.id && e.targetHandle === "text");
+            if (textEdge) {
+              // Get fresh node data (not the captured `nodes` from start of execution)
+              const currentNodes = get().nodes;
+              const sourceNode = currentNodes.find(n => n.id === textEdge.source);
+              if (sourceNode?.type === "syllableChunker") {
+                // Use the video node's chunkIndex to select which chunk
+                const chunkerData = sourceNode.data as SyllableChunkerNodeData;
+                const chunks = chunkerData.outputChunks || [];
+                const idx = Math.max(0, Math.min(nodeData.chunkIndex - 1, chunks.length - 1)); // Convert 1-indexed to 0-indexed
+                text = chunks[idx] || null;
+                console.log(`[Video] Using chunk ${nodeData.chunkIndex} of ${chunks.length}: "${text?.substring(0, 50)}..."`);
+              } else {
+                // Normal text source - also get fresh data
+                const { text: connectedText } = get().getConnectedInputs(node.id);
+                text = connectedText;
+              }
+            }
+
+            if (!firstFrame || !text) {
               updateNodeData(node.id, { status: "error", error: "Missing image or prompt input" });
               set({ isRunning: false, currentNodeId: null });
               return;
             }
 
-            updateNodeData(node.id, { inputImage: image, inputPrompt: text, status: "loading", error: null });
+            // Combine prompt and context if context is provided
+            const fullPrompt = context ? `${context}\n\n${text}` : text;
+
+            updateNodeData(node.id, {
+              inputImage: firstFrame,
+              inputPrompt: text,
+              inputContext: context,
+              referenceImages: refs,
+              status: "loading",
+              error: null
+            });
 
             try {
-              const nodeData = node.data as VideoGenerateNodeData;
-              const { replicateApiKey } = useSettingsStore.getState();
-              const response = await fetch("/api/video", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  ...(replicateApiKey && { "x-replicate-api-key": replicateApiKey }),
-                },
-                body: JSON.stringify({ prompt: text, image, duration: nodeData.duration }),
-                signal: abortController.signal,
-              });
+              const { geminiApiKey, kieAiApiKey } = useSettingsStore.getState();
+              const isKieAiModel = nodeData.model?.startsWith("kieai-");
+              console.log("[Video] Model:", nodeData.model, "| Using Kie AI:", isKieAiModel);
+
+              let response: Response;
+              if (isKieAiModel) {
+                // Use Kie AI API
+                response = await fetch("/api/video-kieai", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    ...(kieAiApiKey && { "x-kieai-api-key": kieAiApiKey }),
+                  },
+                  body: JSON.stringify({
+                    prompt: fullPrompt,
+                    model: nodeData.model,
+                    image: firstFrame,
+                    referenceImages: refs.length > 0 ? refs : undefined,
+                    aspectRatio: nodeData.aspectRatio,
+                    duration: nodeData.duration,
+                  }),
+                  signal: abortController.signal,
+                });
+              } else {
+                // Use Google Veo API
+                response = await fetch("/api/video", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    ...(geminiApiKey && { "x-gemini-api-key": geminiApiKey }),
+                  },
+                  body: JSON.stringify({
+                    prompt: fullPrompt,
+                    model: nodeData.model,
+                    image: firstFrame,
+                    referenceImages: refs.length > 0 ? refs : undefined,
+                    durationSeconds: nodeData.duration,
+                    aspectRatio: nodeData.aspectRatio,
+                    resolution: nodeData.resolution,
+                  }),
+                  signal: abortController.signal,
+                });
+              }
 
               const result = await response.json();
               if (result.success) {
@@ -1540,6 +1882,9 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => {
                   status: "complete",
                   error: null,
                 });
+                // Add delay between video generations to avoid rate limiting
+                console.log("[Video] Waiting 5s before next node...");
+                await new Promise(resolve => setTimeout(resolve, 5000));
               } else {
                 throw new Error(result.error);
               }
@@ -1597,6 +1942,105 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => {
             }
             break;
           }
+
+          case "syllableChunker": {
+            const { text } = getConnectedInputs(node.id);
+            if (!text) {
+              updateNodeData(node.id, { status: "error", error: "Missing text input" });
+              set({ isRunning: false, currentNodeId: null });
+              return;
+            }
+
+            updateNodeData(node.id, { inputScript: text, status: "loading", error: null });
+
+            try {
+              const nodeData = node.data as SyllableChunkerNodeData;
+              const chunks = chunkBySyllables(text, nodeData.targetSyllables, nodeData.chunkPrefix ?? "Dialogue: ");
+              updateNodeData(node.id, {
+                outputChunks: chunks,
+                selectedChunkIndex: 0,
+                status: "complete",
+                error: null,
+              });
+            } catch (error) {
+              updateNodeData(node.id, {
+                status: "error",
+                error: error instanceof Error ? error.message : "Chunking failed",
+              });
+              set({ isRunning: false, currentNodeId: null });
+              return;
+            }
+            break;
+          }
+
+          case "videoStitch": {
+            // Get all connected video nodes and their videos
+            const currentNodes = get().nodes;
+            const currentEdges = get().edges;
+            const videoEdges = currentEdges.filter(
+              (e) => e.target === node.id && e.targetHandle === "video"
+            );
+
+            if (videoEdges.length === 0) {
+              updateNodeData(node.id, { status: "error", error: "No video nodes connected" });
+              set({ isRunning: false, currentNodeId: null });
+              return;
+            }
+
+            // Collect videos with their chunkIndex
+            const videosToStitch: { video: string; chunkIndex: number }[] = [];
+
+            for (const edge of videoEdges) {
+              const sourceNode = currentNodes.find((n) => n.id === edge.source);
+              if (sourceNode?.type === "videoGenerate") {
+                const videoData = sourceNode.data as VideoGenerateNodeData;
+                if (videoData.outputVideo) {
+                  videosToStitch.push({
+                    video: videoData.outputVideo,
+                    chunkIndex: videoData.chunkIndex || 1,
+                  });
+                }
+              }
+            }
+
+            if (videosToStitch.length === 0) {
+              updateNodeData(node.id, { status: "error", error: "No videos ready to stitch" });
+              set({ isRunning: false, currentNodeId: null });
+              return;
+            }
+
+            updateNodeData(node.id, {
+              inputVideos: videosToStitch.map((v) => ({ ...v, sourceNodeId: "" })),
+              status: "loading",
+              error: null,
+            });
+
+            try {
+              const response = await fetch("/api/video-stitch", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ videos: videosToStitch }),
+                signal: abortController.signal,
+              });
+
+              const result = await response.json();
+              if (result.success) {
+                updateNodeData(node.id, { outputVideo: result.video, status: "complete", error: null });
+              } else {
+                throw new Error(result.error);
+              }
+            } catch (error) {
+              if (error instanceof Error && error.name === "AbortError") {
+                updateNodeData(node.id, { status: "idle", error: null });
+                set({ isRunning: false, currentNodeId: null, abortController: null });
+                return;
+              }
+              updateNodeData(node.id, { status: "error", error: error instanceof Error ? error.message : "Stitching failed" });
+              set({ isRunning: false, currentNodeId: null });
+              return;
+            }
+            break;
+          }
         }
       }
 
@@ -1617,7 +2061,7 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => {
   },
 
   regenerateNode: async (nodeId: string) => {
-    const { nodes, updateNodeData, getConnectedInputs, isRunning } = get();
+    const { nodes, edges, updateNodeData, getConnectedInputs, isRunning } = get();
 
     if (isRunning) {
       return;
@@ -1792,8 +2236,29 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => {
       } else if (node.type === "videoGenerate") {
         const nodeData = node.data as VideoGenerateNodeData;
         const inputs = getConnectedInputs(nodeId);
-        const text = inputs.text ?? nodeData.inputPrompt;
         const image = inputs.images[0] ?? nodeData.inputImage;
+        const refs = inputs.referenceImages.slice(0, 3); // Up to 3 reference images
+        const context = inputs.context ?? nodeData.inputContext;
+
+        // Get text input - check if connected to a syllable chunker for chunk selection
+        let text: string | null = null;
+        const textEdge = edges.find(e => e.target === nodeId && e.targetHandle === "text");
+        if (textEdge) {
+          const sourceNode = nodes.find(n => n.id === textEdge.source);
+          if (sourceNode?.type === "syllableChunker") {
+            // Use the video node's chunkIndex to select which chunk
+            const chunkerData = sourceNode.data as SyllableChunkerNodeData;
+            const chunks = chunkerData.outputChunks || [];
+            const idx = Math.max(0, Math.min(nodeData.chunkIndex - 1, chunks.length - 1));
+            text = chunks[idx] || null;
+            console.log(`[Video Regenerate] Using chunk ${nodeData.chunkIndex} of ${chunks.length}`);
+            console.log(`[Video Regenerate] Chunk text: "${text?.substring(0, 80)}..."`);
+          } else {
+            text = inputs.text;
+          }
+        } else {
+          text = inputs.text ?? nodeData.inputPrompt;
+        }
 
         if (!image || !text) {
           updateNodeData(nodeId, { status: "error", error: "Missing image or prompt input" });
@@ -1801,18 +2266,56 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => {
           return;
         }
 
-        updateNodeData(nodeId, { status: "loading", error: null });
+        // Combine prompt and context if context is provided
+        const fullPrompt = context ? `${context}\n\n${text}` : text;
 
-        const { replicateApiKey } = useSettingsStore.getState();
-        const response = await fetch("/api/video", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(replicateApiKey && { "x-replicate-api-key": replicateApiKey }),
-          },
-          body: JSON.stringify({ prompt: text, image, duration: nodeData.duration }),
-          signal: abortController.signal,
-        });
+        updateNodeData(nodeId, { status: "loading", error: null, inputContext: context, referenceImages: refs });
+
+        const { geminiApiKey, kieAiApiKey } = useSettingsStore.getState();
+        const isKieAiModel = nodeData.model?.startsWith("kieai-");
+        console.log("[Video Regenerate] Model:", nodeData.model, "| Using Kie AI:", isKieAiModel);
+        console.log("[Video Regenerate] Prompt:", fullPrompt?.substring(0, 100), "| Image:", image ? "present" : "MISSING");
+
+        let response: Response;
+        if (isKieAiModel) {
+          // Use Kie AI API
+          console.log("[Video Regenerate] Making Kie AI request...");
+          response = await fetch("/api/video-kieai", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(kieAiApiKey && { "x-kieai-api-key": kieAiApiKey }),
+            },
+            body: JSON.stringify({
+              prompt: fullPrompt,
+              model: nodeData.model,
+              image,
+              referenceImages: refs.length > 0 ? refs : undefined,
+              aspectRatio: nodeData.aspectRatio,
+              duration: nodeData.duration,
+            }),
+            signal: abortController.signal,
+          });
+        } else {
+          // Use Google Veo API
+          response = await fetch("/api/video", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(geminiApiKey && { "x-gemini-api-key": geminiApiKey }),
+            },
+            body: JSON.stringify({
+              prompt: fullPrompt,
+              model: nodeData.model,
+              image,
+              referenceImages: refs.length > 0 ? refs : undefined,
+              durationSeconds: nodeData.duration,
+              aspectRatio: nodeData.aspectRatio,
+              resolution: nodeData.resolution,
+            }),
+            signal: abortController.signal,
+          });
+        }
 
         const result = await response.json();
         if (result.success) {
@@ -1855,6 +2358,243 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => {
         } else {
           throw new Error(result.error);
         }
+      } else if (node.type === "syllableChunker") {
+        const nodeData = node.data as SyllableChunkerNodeData;
+        const inputs = getConnectedInputs(nodeId);
+        const text = inputs.text ?? nodeData.inputScript;
+
+        if (!text) {
+          updateNodeData(nodeId, { status: "error", error: "Missing text input" });
+          set({ isRunning: false, currentNodeId: null });
+          return;
+        }
+
+        updateNodeData(nodeId, { inputScript: text, status: "loading", error: null });
+
+        try {
+          const chunks = chunkBySyllables(text, nodeData.targetSyllables, nodeData.chunkPrefix ?? "Dialogue: ");
+          updateNodeData(nodeId, {
+            outputChunks: chunks,
+            selectedChunkIndex: 0,
+            status: "complete",
+            error: null,
+          });
+        } catch (error) {
+          updateNodeData(nodeId, {
+            status: "error",
+            error: error instanceof Error ? error.message : "Chunking failed",
+          });
+        }
+      } else if (node.type === "videoStitch") {
+        const stitchData = node.data as VideoStitchNodeData;
+        const iterationCount = stitchData.iterationCount || 1;
+        const outputFolder = stitchData.outputFolder;
+
+        // Get all connected video nodes
+        const currentEdges = get().edges;
+        const videoEdges = currentEdges.filter(
+          (e) => e.target === nodeId && e.targetHandle === "video"
+        );
+
+        if (videoEdges.length === 0) {
+          updateNodeData(nodeId, { status: "error", error: "No video nodes connected" });
+          set({ isRunning: false, currentNodeId: null });
+          return;
+        }
+
+        // Get the connected video node IDs
+        const videoNodeIds = videoEdges.map(e => e.source);
+
+        updateNodeData(nodeId, { status: "loading", error: null, currentIteration: 0 });
+
+        const { geminiApiKey, kieAiApiKey } = useSettingsStore.getState();
+
+        // Run iterations
+        for (let iteration = 1; iteration <= iterationCount; iteration++) {
+          console.log(`[Video Stitch] Starting iteration ${iteration}/${iterationCount}`);
+          updateNodeData(nodeId, { currentIteration: iteration });
+
+          // Regenerate all connected video nodes
+          for (const videoNodeId of videoNodeIds) {
+            const currentNodes = get().nodes;
+            const videoNode = currentNodes.find(n => n.id === videoNodeId);
+            if (!videoNode || videoNode.type !== "videoGenerate") continue;
+
+            const videoData = videoNode.data as VideoGenerateNodeData;
+            const videoInputs = getConnectedInputs(videoNodeId);
+            const image = videoInputs.images[0] ?? videoData.inputImage;
+            const refs = videoInputs.referenceImages.slice(0, 3); // Get reference images from dedicated handle
+            const context = videoInputs.context ?? videoData.inputContext;
+
+            // Get text input - check if connected to a syllable chunker
+            let text: string | null = null;
+            const textEdge = edges.find(e => e.target === videoNodeId && e.targetHandle === "text");
+            if (textEdge) {
+              const sourceNode = currentNodes.find(n => n.id === textEdge.source);
+              if (sourceNode?.type === "syllableChunker") {
+                const chunkerData = sourceNode.data as SyllableChunkerNodeData;
+                const chunks = chunkerData.outputChunks || [];
+                const idx = Math.max(0, Math.min(videoData.chunkIndex - 1, chunks.length - 1));
+                text = chunks[idx] || null;
+              } else {
+                text = videoInputs.text;
+              }
+            } else {
+              text = videoInputs.text ?? videoData.inputPrompt;
+            }
+
+            if (!image || !text) {
+              console.log(`[Video Stitch] Skipping video node ${videoNodeId} - missing image or text`);
+              continue;
+            }
+
+            const fullPrompt = context ? `${context}\n\n${text}` : text;
+
+            // Set current node to video node so it shows as running on canvas
+            set({ currentNodeId: videoNodeId });
+            updateNodeData(videoNodeId, { status: "loading", error: null, referenceImages: refs });
+
+            try {
+              const isKieAiModel = videoData.model?.startsWith("kieai-");
+              let response: Response;
+
+              if (isKieAiModel) {
+                response = await fetch("/api/video-kieai", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    ...(kieAiApiKey && { "x-kieai-api-key": kieAiApiKey }),
+                  },
+                  body: JSON.stringify({
+                    prompt: fullPrompt,
+                    model: videoData.model,
+                    image,
+                    referenceImages: refs.length > 0 ? refs : undefined,
+                    aspectRatio: videoData.aspectRatio,
+                    duration: videoData.duration,
+                  }),
+                  signal: abortController.signal,
+                });
+              } else {
+                response = await fetch("/api/video", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    ...(geminiApiKey && { "x-gemini-api-key": geminiApiKey }),
+                  },
+                  body: JSON.stringify({
+                    prompt: fullPrompt,
+                    model: videoData.model,
+                    image,
+                    referenceImages: refs.length > 0 ? refs : undefined,
+                    durationSeconds: videoData.duration,
+                    aspectRatio: videoData.aspectRatio,
+                    resolution: videoData.resolution,
+                  }),
+                  signal: abortController.signal,
+                });
+              }
+
+              const result = await response.json();
+              if (result.success) {
+                updateNodeData(videoNodeId, {
+                  outputVideo: result.video,
+                  lastFrame: result.lastFrame,
+                  status: "complete",
+                  error: null,
+                });
+                console.log(`[Video Stitch] Video node ${videoNodeId} completed for iteration ${iteration}`);
+              } else {
+                throw new Error(result.error);
+              }
+            } catch (error) {
+              if (error instanceof Error && error.name === "AbortError") {
+                updateNodeData(videoNodeId, { status: "idle", error: null });
+                updateNodeData(nodeId, { status: "idle", error: null, currentIteration: 0 });
+                set({ isRunning: false, currentNodeId: null, abortController: null });
+                return;
+              }
+              updateNodeData(videoNodeId, {
+                status: "error",
+                error: error instanceof Error ? error.message : "Video generation failed",
+              });
+              // Continue with other videos even if one fails
+            }
+          }
+
+          // Collect videos for stitching
+          const updatedNodes = get().nodes;
+          const videosToStitch: { video: string; chunkIndex: number }[] = [];
+
+          for (const edge of videoEdges) {
+            const sourceNode = updatedNodes.find((n) => n.id === edge.source);
+            if (sourceNode?.type === "videoGenerate") {
+              const videoData = sourceNode.data as VideoGenerateNodeData;
+              if (videoData.outputVideo) {
+                videosToStitch.push({
+                  video: videoData.outputVideo,
+                  chunkIndex: videoData.chunkIndex || 1,
+                });
+              }
+            }
+          }
+
+          if (videosToStitch.length === 0) {
+            console.log(`[Video Stitch] No videos ready for iteration ${iteration}, skipping`);
+            continue;
+          }
+
+          // Set current node back to stitch node for stitching phase
+          set({ currentNodeId: nodeId });
+          updateNodeData(nodeId, { status: "loading" });
+
+          // Stitch videos
+          console.log(`[Video Stitch] Stitching ${videosToStitch.length} videos for iteration ${iteration}`);
+          const stitchResponse = await fetch("/api/video-stitch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ videos: videosToStitch }),
+            signal: abortController.signal,
+          });
+
+          const stitchResult = await stitchResponse.json();
+          if (!stitchResult.success) {
+            throw new Error(stitchResult.error);
+          }
+
+          const stitchedVideo = stitchResult.video;
+
+          // Save to folder or set as output
+          if (outputFolder) {
+            const filename = `stitched_iter${iteration}_${new Date().toISOString().replace(/[:.]/g, "-")}.mp4`;
+            const saveResponse = await fetch("/api/save-video", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                video: stitchedVideo,
+                folder: outputFolder,
+                filename,
+              }),
+            });
+
+            const saveResult = await saveResponse.json();
+            if (saveResult.success) {
+              console.log(`[Video Stitch] Saved iteration ${iteration} to: ${saveResult.path}`);
+            } else {
+              console.error(`[Video Stitch] Failed to save iteration ${iteration}: ${saveResult.error}`);
+            }
+          }
+
+          // Update output video with the latest iteration
+          updateNodeData(nodeId, {
+            inputVideos: videosToStitch.map((v) => ({ ...v, sourceNodeId: "" })),
+            outputVideo: stitchedVideo,
+          });
+        }
+
+        // Mark as complete
+        updateNodeData(nodeId, { status: "complete", error: null, currentIteration: 0 });
+        console.log(`[Video Stitch] All ${iterationCount} iterations complete`);
       }
 
       set({ isRunning: false, currentNodeId: null, abortController: null });
@@ -1900,6 +2640,45 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => {
     URL.revokeObjectURL(url);
   },
 
+  saveToProjectDirectory: async () => {
+    const { nodes, edges, edgeStyle, saveDirectoryPath, workflowName, currentWorkflowId } = get();
+
+    if (!saveDirectoryPath) {
+      return { success: false, error: "No project directory set" };
+    }
+
+    const name = workflowName || "workflow";
+    const workflow: WorkflowFile = {
+      version: 1,
+      id: currentWorkflowId || `wf_${Date.now()}`,
+      name,
+      nodes,
+      edges,
+      edgeStyle,
+    };
+
+    try {
+      const response = await fetch("/api/workflow", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          directoryPath: saveDirectoryPath,
+          filename: name,
+          workflow,
+        }),
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        return { success: true, filePath: result.filePath };
+      } else {
+        return { success: false, error: result.error };
+      }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
+    }
+  },
+
   loadWorkflow: (workflow: WorkflowFile) => {
       recordHistory();
     // Update nodeIdCounter to avoid ID collisions
@@ -1929,6 +2708,71 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => {
       isRunning: false,
       currentNodeId: null,
     });
+  },
+
+  resetIncurredCost: () => {
+    // Cost tracking is stored in localStorage per workflow
+    const workflowId = get().currentWorkflowId;
+    if (workflowId) {
+      const costsKey = "node-banana-workflow-costs";
+      try {
+        const costs = JSON.parse(localStorage.getItem(costsKey) || "{}");
+        costs[workflowId] = 0;
+        localStorage.setItem(costsKey, JSON.stringify(costs));
+      } catch {
+        // Ignore localStorage errors
+      }
+    }
+  },
+
+  // Groups - stub implementations (feature not fully implemented)
+  createGroup: (nodeIds: string[], name?: string) => {
+    const groupId = `group-${Date.now()}`;
+    const newGroup: GroupData = {
+      name: name || "Group",
+      color: "neutral",
+      position: { x: 0, y: 0 },
+      size: { width: 300, height: 200 },
+      locked: false,
+      nodeIds,
+    };
+    set((state) => ({
+      groups: { ...state.groups, [groupId]: newGroup },
+    }));
+    return groupId;
+  },
+
+  updateGroup: (groupId: string, updates: Partial<GroupData>) => {
+    set((state) => ({
+      groups: {
+        ...state.groups,
+        [groupId]: { ...state.groups[groupId], ...updates },
+      },
+    }));
+  },
+
+  deleteGroup: (groupId: string) => {
+    set((state) => {
+      const { [groupId]: _, ...rest } = state.groups;
+      return { groups: rest };
+    });
+  },
+
+  moveGroupNodes: () => {
+    // Stub - would move all nodes in a group by delta
+  },
+
+  toggleGroupLock: (groupId: string) => {
+    set((state) => ({
+      groups: {
+        ...state.groups,
+        [groupId]: { ...state.groups[groupId], locked: !state.groups[groupId]?.locked },
+      },
+    }));
+  },
+
+  removeNodesFromGroup: () => {
+    // Stub - would remove nodes from their groups
   },
 
   addToGlobalHistory: (item: Omit<ImageHistoryItem, "id">) => {

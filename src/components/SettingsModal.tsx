@@ -11,10 +11,12 @@ export function SettingsModal() {
     openaiApiKey,
     elevenLabsApiKey,
     replicateApiKey,
+    kieAiApiKey,
     setGeminiApiKey,
     setOpenaiApiKey,
     setElevenLabsApiKey,
     setReplicateApiKey,
+    setKieAiApiKey,
   } = useSettingsStore();
 
   // Local state for editing
@@ -22,12 +24,14 @@ export function SettingsModal() {
   const [localOpenai, setLocalOpenai] = useState(openaiApiKey);
   const [localElevenlabs, setLocalElevenlabs] = useState(elevenLabsApiKey);
   const [localReplicate, setLocalReplicate] = useState(replicateApiKey);
+  const [localKieAi, setLocalKieAi] = useState(kieAiApiKey);
 
   // Visibility toggles
   const [showGemini, setShowGemini] = useState(false);
   const [showOpenai, setShowOpenai] = useState(false);
   const [showElevenlabs, setShowElevenlabs] = useState(false);
   const [showReplicate, setShowReplicate] = useState(false);
+  const [showKieAi, setShowKieAi] = useState(false);
 
   // Sync local state when modal opens
   useEffect(() => {
@@ -36,16 +40,18 @@ export function SettingsModal() {
       setLocalOpenai(openaiApiKey);
       setLocalElevenlabs(elevenLabsApiKey);
       setLocalReplicate(replicateApiKey);
+      setLocalKieAi(kieAiApiKey);
     }
-  }, [isSettingsOpen, geminiApiKey, openaiApiKey, elevenLabsApiKey, replicateApiKey]);
+  }, [isSettingsOpen, geminiApiKey, openaiApiKey, elevenLabsApiKey, replicateApiKey, kieAiApiKey]);
 
   const handleSave = useCallback(() => {
     setGeminiApiKey(localGemini.trim());
     setOpenaiApiKey(localOpenai.trim());
     setElevenLabsApiKey(localElevenlabs.trim());
     setReplicateApiKey(localReplicate.trim());
+    setKieAiApiKey(localKieAi.trim());
     setSettingsOpen(false);
-  }, [localGemini, localOpenai, localElevenlabs, localReplicate, setGeminiApiKey, setOpenaiApiKey, setElevenLabsApiKey, setReplicateApiKey, setSettingsOpen]);
+  }, [localGemini, localOpenai, localElevenlabs, localReplicate, localKieAi, setGeminiApiKey, setOpenaiApiKey, setElevenLabsApiKey, setReplicateApiKey, setKieAiApiKey, setSettingsOpen]);
 
   const handleClose = useCallback(() => {
     setSettingsOpen(false);
@@ -135,6 +141,17 @@ export function SettingsModal() {
             onToggleShow={() => setShowReplicate(!showReplicate)}
             placeholder="r8_..."
             hasKey={!!replicateApiKey}
+          />
+
+          {/* Kie AI API Key */}
+          <ApiKeyInput
+            label="Kie AI API Key (Video)"
+            value={localKieAi}
+            onChange={setLocalKieAi}
+            show={showKieAi}
+            onToggleShow={() => setShowKieAi(!showKieAi)}
+            placeholder="kie_..."
+            hasKey={!!kieAiApiKey}
           />
         </div>
 

@@ -20,6 +20,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useWorkflowStore, WorkflowFile } from "@/store/workflowStore";
 import {
   ImageInputNode,
+  VideoInputNode,
   AnnotationNode,
   PromptNode,
   NanoBananaNode,
@@ -27,6 +28,8 @@ import {
   OutputNode,
   VideoGenerateNode,
   ElevenLabsNode,
+  SyllableChunkerNode,
+  VideoStitchNode,
 } from "./nodes";
 import { EditableEdge } from "./edges";
 import { ConnectionDropMenu, MenuAction } from "./ConnectionDropMenu";
@@ -35,9 +38,11 @@ import { EdgeToolbar } from "./EdgeToolbar";
 import { GlobalImageHistory } from "./GlobalImageHistory";
 import { NodeType, NanoBananaNodeData } from "@/types";
 import { detectAndSplitGrid } from "@/utils/gridSplitter";
+import { useToast } from "@/components/Toast";
 
 const nodeTypes: NodeTypes = {
   imageInput: ImageInputNode,
+  videoInput: VideoInputNode,
   annotation: AnnotationNode,
   prompt: PromptNode,
   nanoBanana: NanoBananaNode,
@@ -45,6 +50,8 @@ const nodeTypes: NodeTypes = {
   output: OutputNode,
   videoGenerate: VideoGenerateNode,
   elevenLabs: ElevenLabsNode,
+  syllableChunker: SyllableChunkerNode,
+  videoStitch: VideoStitchNode,
 };
 
 const edgeTypes: EdgeTypes = {
@@ -60,8 +67,13 @@ const isValidConnection = (connection: Edge | Connection): boolean => {
   const sourceHandle = connection.sourceHandle;
   const targetHandle = connection.targetHandle;
 
-  // Strict type matching: image <-> image, text <-> text/context, video <-> video, audio <-> audio
-  if (sourceHandle === "image" && targetHandle !== "image") {
+  // Strict type matching: image <-> image/reference, text <-> text/context, video <-> video, audio <-> audio
+  // Image sources can connect to image OR reference targets
+  if (sourceHandle === "image" && targetHandle !== "image" && targetHandle !== "reference") {
+    return false;
+  }
+  // Reference sources can connect to reference targets (for passthrough chaining)
+  if (sourceHandle === "reference" && targetHandle !== "reference") {
     return false;
   }
   // Text sources can connect to text OR context targets
@@ -83,6 +95,8 @@ const getNodeHandles = (nodeType: string): { inputs: string[]; outputs: string[]
   switch (nodeType) {
     case "imageInput":
       return { inputs: [], outputs: ["image"] };
+    case "videoInput":
+      return { inputs: [], outputs: ["video", "image"] };
     case "annotation":
       return { inputs: ["image"], outputs: ["image"] };
     case "prompt":
@@ -92,9 +106,13 @@ const getNodeHandles = (nodeType: string): { inputs: string[]; outputs: string[]
     case "llmGenerate":
       return { inputs: ["text", "context", "image"], outputs: ["text", "image"] };
     case "videoGenerate":
-      return { inputs: ["image", "text"], outputs: ["video", "image"] };
+      return { inputs: ["image", "reference", "text", "context"], outputs: ["video", "image", "reference"] };
     case "elevenLabs":
       return { inputs: ["text"], outputs: ["audio"] };
+    case "syllableChunker":
+      return { inputs: ["text"], outputs: ["text"] };
+    case "videoStitch":
+      return { inputs: ["video"], outputs: ["video"] };
     case "output":
       return { inputs: ["image", "video", "audio"], outputs: [] };
     default:
@@ -138,6 +156,11 @@ function WorkflowCanvasInner() {
   const undo = useWorkflowStore((state) => state.undo);
   const redo = useWorkflowStore((state) => state.redo);
   const sidebarOpen = useWorkflowStore((state) => state.sidebarOpen);
+  const saveToProjectDirectory = useWorkflowStore((state) => state.saveToProjectDirectory);
+  const saveWorkflow = useWorkflowStore((state) => state.saveWorkflow);
+  const saveDirectoryPath = useWorkflowStore((state) => state.saveDirectoryPath);
+  const workflowName = useWorkflowStore((state) => state.workflowName);
+  const toast = useToast();
 
   const { screenToFlowPosition, getViewport } = useReactFlow();
   const [isDragOver, setIsDragOver] = useState(false);
@@ -401,7 +424,7 @@ function WorkflowCanvasInner() {
 
       // Handle actions differently from node creation
       if (selection.isAction) {
-        if (selection.type === "splitGrid" && sourceNodeId) {
+        if (selection.type === "splitGridImmediate" && sourceNodeId) {
           handleSplitGridAction(sourceNodeId, flowPosition);
         }
         setConnectionDrop(null);
@@ -445,10 +468,10 @@ function WorkflowCanvasInner() {
           sourceHandleIdForNewNode = "image";
         }
       } else if (handleType === "text") {
-        if (nodeType === "nanoBanana" || nodeType === "llmGenerate" || nodeType === "videoGenerate" || nodeType === "elevenLabs") {
+        if (nodeType === "nanoBanana" || nodeType === "llmGenerate" || nodeType === "videoGenerate" || nodeType === "elevenLabs" || nodeType === "syllableChunker") {
           targetHandleId = "text";
-          // llmGenerate also has a text output
-          if (nodeType === "llmGenerate") {
+          // llmGenerate and syllableChunker also have text output
+          if (nodeType === "llmGenerate" || nodeType === "syllableChunker") {
             sourceHandleIdForNewNode = "text";
           }
         } else if (nodeType === "prompt") {
@@ -565,6 +588,25 @@ function WorkflowCanvasInner() {
       if (isMod && key === "y") {
         event.preventDefault();
         redo();
+        return;
+      }
+
+      // Handle save (Ctrl/Cmd + S)
+      if (isMod && key === "s") {
+        event.preventDefault();
+        if (saveDirectoryPath) {
+          // Save to project directory
+          saveToProjectDirectory().then((result) => {
+            if (result.success) {
+              toast.show(`Saved to ${result.filePath}`, "success");
+            } else {
+              toast.show(`Save failed: ${result.error}`, "error");
+            }
+          });
+        } else {
+          // Fall back to download
+          saveWorkflow(workflowName || undefined);
+        }
         return;
       }
 
@@ -736,7 +778,7 @@ function WorkflowCanvasInner() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [nodes, onNodesChange, copySelectedNodes, pasteNodes, clearClipboard, clipboard, getViewport, addNode, updateNodeData, undo, redo]);
+  }, [nodes, onNodesChange, copySelectedNodes, pasteNodes, clearClipboard, clipboard, getViewport, addNode, updateNodeData, undo, redo, saveToProjectDirectory, saveWorkflow, saveDirectoryPath, workflowName, toast]);
 
   const handleDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -956,6 +998,8 @@ function WorkflowCanvasInner() {
             switch (node.type) {
               case "imageInput":
                 return "#3b82f6";
+              case "videoInput":
+                return "#ec4899";
               case "annotation":
                 return "#8b5cf6";
               case "prompt":
@@ -968,6 +1012,10 @@ function WorkflowCanvasInner() {
                 return "#f43f5e";
               case "elevenLabs":
                 return "#8b5cf6";
+              case "syllableChunker":
+                return "#9333ea";
+              case "videoStitch":
+                return "#14b8a6";
               case "output":
                 return "#ef4444";
               default:

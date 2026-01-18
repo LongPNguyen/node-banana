@@ -14,6 +14,10 @@ interface BaseNodeProps {
   className?: string;
   minWidth?: number;
   minHeight?: number;
+  customTitle?: string;
+  comment?: string;
+  onCustomTitleChange?: (title: string) => void;
+  onCommentChange?: (comment: string) => void;
 }
 
 export const BaseNode = memo(({
@@ -26,7 +30,13 @@ export const BaseNode = memo(({
   className = "",
   minWidth = 180,
   minHeight = 100,
+  customTitle,
+  comment,
+  onCustomTitleChange,
+  onCommentChange,
 }: BaseNodeProps) => {
+  // customTitle, comment, onCustomTitleChange, onCommentChange are available for node customization
+  void customTitle; void comment; void onCustomTitleChange; void onCommentChange;
   const currentNodeId = useWorkflowStore((state) => state.currentNodeId);
   const isCurrentlyExecuting = currentNodeId === id;
   const { getNodes, setNodes } = useReactFlow();

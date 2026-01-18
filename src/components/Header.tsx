@@ -11,6 +11,36 @@ export function Header() {
         <img src="/banana_icon.png" alt="Banana" className="w-6 h-6" />
         <h1 className="text-2xl font-semibold text-neutral-100 tracking-tight">Node Banana</h1>
       </div>
+
+      {/* Connection color legend */}
+      <div className="flex items-center gap-3 text-[10px]">
+        <span className="text-[9px] text-neutral-500 uppercase tracking-wider">Connections:</span>
+        <span className="flex items-center gap-1">
+          <span className="w-3 h-0.5 rounded bg-green-500" />
+          <span className="text-neutral-400">Image</span>
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-3 h-0.5 rounded bg-purple-500" />
+          <span className="text-neutral-400">Reference</span>
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-3 h-0.5 rounded bg-blue-500" />
+          <span className="text-neutral-400">Text</span>
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-3 h-0.5 rounded bg-yellow-500" />
+          <span className="text-neutral-400">Context</span>
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-3 h-0.5 rounded bg-red-500" />
+          <span className="text-neutral-400">Video</span>
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-3 h-0.5 rounded bg-orange-500" />
+          <span className="text-neutral-400">Audio</span>
+        </span>
+      </div>
+
       <div className="flex items-center gap-4">
         <button
           onClick={() => setSettingsOpen(true)}
@@ -28,7 +58,7 @@ export function Header() {
           rel="noopener noreferrer"
           className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors"
         >
-          Made by Willie
+          Made by Willie enhanced by Long Nguyen
         </a>
       </div>
     </header>

@@ -16,12 +16,16 @@ interface EdgeData extends WorkflowEdgeData {
   offsetY?: number;
 }
 
-// Colors for different connection types (dimmed for softer appearance)
-const EDGE_COLORS = {
-  image: "#0d9668", // Dimmed green for image connections
-  prompt: "#2563eb", // Dimmed blue for prompt connections
-  default: "#64748b", // Dimmed gray for unknown
-  pause: "#ea580c", // Dimmed orange for paused edges
+// Colors for different connection types
+const EDGE_COLORS: Record<string, string> = {
+  image: "#22c55e",      // Green for image/frame connections
+  reference: "#a855f7",  // Purple for reference connections
+  text: "#3b82f6",       // Blue for text/prompt connections
+  context: "#eab308",    // Yellow for context connections
+  video: "#ef4444",      // Red for video connections
+  audio: "#f97316",      // Orange for audio connections
+  default: "#64748b",    // Gray for unknown
+  pause: "#dc2626",      // Dark red for paused edges
 };
 
 export function EditableEdge({
@@ -75,10 +79,8 @@ export function EditableEdge({
   const edgeColor = useMemo(() => {
     if (hasPause) return EDGE_COLORS.pause;
     // Use source handle to determine color (or target if source is not available)
-    const handleType = sourceHandleId || targetHandleId;
-    if (handleType === "image") return EDGE_COLORS.image;
-    if (handleType === "prompt") return EDGE_COLORS.prompt;
-    return EDGE_COLORS.default;
+    const handleType = sourceHandleId || targetHandleId || "default";
+    return EDGE_COLORS[handleType] || EDGE_COLORS.default;
   }, [hasPause, sourceHandleId, targetHandleId]);
 
   // Generate a unique gradient ID based on edge color and selection state

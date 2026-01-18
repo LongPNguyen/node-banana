@@ -1,4 +1,5 @@
 export { ImageInputNode } from "./ImageInputNode";
+export { VideoInputNode } from "./VideoInputNode";
 export { AnnotationNode } from "./AnnotationNode";
 export { PromptNode } from "./PromptNode";
 export { NanoBananaNode } from "./NanoBananaNode";
@@ -6,4 +7,6 @@ export { LLMGenerateNode } from "./LLMGenerateNode";
 export { OutputNode } from "./OutputNode";
 export { VideoGenerateNode } from "./VideoGenerateNode";
 export { ElevenLabsNode } from "./ElevenLabsNode";
+export { SyllableChunkerNode } from "./SyllableChunkerNode";
+export { VideoStitchNode } from "./VideoStitchNode";
 export { ExecuteButton } from "./ExecuteButton";

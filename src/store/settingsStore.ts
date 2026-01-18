@@ -7,19 +7,21 @@ interface SettingsStore {
   openaiApiKey: string;
   elevenLabsApiKey: string;
   replicateApiKey: string;
+  kieAiApiKey: string;
 
   // Setters
   setGeminiApiKey: (key: string) => void;
   setOpenaiApiKey: (key: string) => void;
   setElevenLabsApiKey: (key: string) => void;
   setReplicateApiKey: (key: string) => void;
+  setKieAiApiKey: (key: string) => void;
 
   // Settings modal
   isSettingsOpen: boolean;
   setSettingsOpen: (open: boolean) => void;
 
   // Helper to get API key for a provider
-  getApiKey: (provider: "gemini" | "openai" | "elevenlabs" | "replicate") => string;
+  getApiKey: (provider: "gemini" | "openai" | "elevenlabs" | "replicate" | "kieai") => string;
 }
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -30,19 +32,21 @@ export const useSettingsStore = create<SettingsStore>()(
       openaiApiKey: "",
       elevenLabsApiKey: "",
       replicateApiKey: "",
+      kieAiApiKey: "",
 
       // Setters
       setGeminiApiKey: (key: string) => set({ geminiApiKey: key }),
       setOpenaiApiKey: (key: string) => set({ openaiApiKey: key }),
       setElevenLabsApiKey: (key: string) => set({ elevenLabsApiKey: key }),
       setReplicateApiKey: (key: string) => set({ replicateApiKey: key }),
+      setKieAiApiKey: (key: string) => set({ kieAiApiKey: key }),
 
       // Settings modal state
       isSettingsOpen: false,
       setSettingsOpen: (open: boolean) => set({ isSettingsOpen: open }),
 
       // Helper to get API key for a provider
-      getApiKey: (provider: "gemini" | "openai" | "elevenlabs" | "replicate") => {
+      getApiKey: (provider: "gemini" | "openai" | "elevenlabs" | "replicate" | "kieai") => {
         const state = get();
         switch (provider) {
           case "gemini":
@@ -53,6 +57,8 @@ export const useSettingsStore = create<SettingsStore>()(
             return state.elevenLabsApiKey;
           case "replicate":
             return state.replicateApiKey;
+          case "kieai":
+            return state.kieAiApiKey;
           default:
             return "";
         }
@@ -66,6 +72,7 @@ export const useSettingsStore = create<SettingsStore>()(
         openaiApiKey: state.openaiApiKey,
         elevenLabsApiKey: state.elevenLabsApiKey,
         replicateApiKey: state.replicateApiKey,
+        kieAiApiKey: state.kieAiApiKey,
       }),
     }
   )

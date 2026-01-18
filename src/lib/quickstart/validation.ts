@@ -19,19 +19,27 @@ const VALID_NODE_TYPES: NodeType[] = [
   "llmGenerate",
   "splitGrid",
   "output",
+  "videoGenerate",
+  "elevenLabs",
+  "syllableChunker",
 ];
 
-const VALID_HANDLE_TYPES = ["image", "text", "reference"];
+const VALID_HANDLE_TYPES = ["image", "text", "reference", "video", "audio"];
 
 // Default node dimensions
 const DEFAULT_DIMENSIONS: Record<NodeType, { width: number; height: number }> = {
   imageInput: { width: 300, height: 280 },
+  videoInput: { width: 320, height: 320 },
   annotation: { width: 300, height: 280 },
   prompt: { width: 320, height: 220 },
   nanoBanana: { width: 300, height: 300 },
   llmGenerate: { width: 320, height: 360 },
   splitGrid: { width: 300, height: 320 },
   output: { width: 320, height: 320 },
+  videoGenerate: { width: 340, height: 360 },
+  elevenLabs: { width: 340, height: 300 },
+  syllableChunker: { width: 340, height: 320 },
+  videoStitch: { width: 340, height: 380 },
 };
 
 /**
@@ -193,6 +201,13 @@ function createDefaultNodeData(type: NodeType): WorkflowNodeData {
         filename: null,
         dimensions: null,
       };
+    case "videoInput":
+      return {
+        video: null,
+        filename: null,
+        duration: null,
+        lastFrame: null,
+      };
     case "annotation":
       return {
         sourceImage: null,
@@ -214,18 +229,19 @@ function createDefaultNodeData(type: NodeType): WorkflowNodeData {
         useGoogleSearch: false,
         status: "idle",
         error: null,
-        imageHistory: [],
-        selectedHistoryIndex: 0,
       };
     case "llmGenerate":
       return {
         inputPrompt: null,
+        inputContext: null,
         inputImages: [],
         outputText: null,
+        outputImages: [],
         provider: "google",
         model: "gemini-3-flash-preview",
         temperature: 0.7,
         maxTokens: 8192,
+        useGoogleSearch: false,
         status: "idle",
         error: null,
       };
@@ -250,6 +266,50 @@ function createDefaultNodeData(type: NodeType): WorkflowNodeData {
     case "output":
       return {
         image: null,
+      };
+    case "videoGenerate":
+      return {
+        inputImage: null,
+        inputPrompt: null,
+        inputContext: null,
+        referenceImages: [],
+        outputVideo: null,
+        lastFrame: null,
+        model: "veo-3.1-fast",
+        duration: 8,
+        aspectRatio: "9:16",
+        resolution: "720p",
+        chunkIndex: 1,
+        status: "idle",
+        error: null,
+      };
+    case "elevenLabs":
+      return {
+        inputText: null,
+        voiceId: "21m00Tcm4TlvDq8ikWAM", // Rachel voice
+        outputAudio: null,
+        status: "idle",
+        error: null,
+      };
+    case "syllableChunker":
+      return {
+        inputScript: null,
+        outputChunks: [],
+        selectedChunkIndex: 0,
+        targetSyllables: 58,
+        chunkPrefix: "Dialogue: ",
+        status: "idle",
+        error: null,
+      };
+    case "videoStitch":
+      return {
+        inputVideos: [],
+        outputVideo: null,
+        iterationCount: 1,
+        currentIteration: 0,
+        outputFolder: null,
+        status: "idle",
+        error: null,
       };
   }
 }

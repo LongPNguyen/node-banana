@@ -1,15 +1,34 @@
 import { Node, Edge } from "@xyflow/react";
 
+// Group colors for node grouping
+export type GroupColor = "neutral" | "blue" | "green" | "purple" | "orange" | "red";
+
+// Node group type
+export interface NodeGroup {
+  id: string;
+  name: string;
+  color: GroupColor;
+  nodeIds: string[];
+  position: { x: number; y: number };
+  width: number;
+  height: number;
+  isLocked: boolean;
+}
+
 // Node Types
 export type NodeType =
   | "imageInput"
+  | "videoInput"
   | "annotation"
   | "prompt"
   | "nanoBanana"
   | "llmGenerate"
   | "output"
   | "videoGenerate"
-  | "elevenLabs";
+  | "elevenLabs"
+  | "syllableChunker"
+  | "splitGrid"
+  | "videoStitch";
 
 // Aspect Ratios (supported by both Nano Banana and Nano Banana Pro)
 export type AspectRatio = "1:1" | "2:3" | "3:2" | "3:4" | "4:3" | "4:5" | "5:4" | "9:16" | "16:9" | "21:9";
@@ -38,8 +57,21 @@ export interface BaseNodeData extends Record<string, unknown> {
 // Image Input Node Data
 export interface ImageInputNodeData extends BaseNodeData {
   image: string | null;
+  imageRef?: string; // Reference for external image storage
   filename: string | null;
   dimensions: { width: number; height: number } | null;
+  customTitle?: string;
+  comment?: string;
+}
+
+// Video Input Node Data
+export interface VideoInputNodeData extends BaseNodeData {
+  video: string | null; // Base64 data URL of the video
+  filename: string | null;
+  duration: number | null; // Duration in seconds
+  lastFrame: string | null; // Extracted last frame for chaining
+  customTitle?: string;
+  comment?: string;
 }
 
 // Annotation Shape Types
@@ -96,8 +128,12 @@ export type AnnotationShape =
 // Annotation Node Data
 export interface AnnotationNodeData extends BaseNodeData {
   sourceImage: string | null;
+  sourceImageRef?: string; // Reference for external image storage
   annotations: AnnotationShape[];
   outputImage: string | null;
+  outputImageRef?: string; // Reference for external image storage
+  customTitle?: string;
+  comment?: string;
 }
 
 // Prompt Node Data
@@ -118,8 +154,10 @@ export interface ImageHistoryItem {
 // Nano Banana Node Data (Image Generation)
 export interface NanoBananaNodeData extends BaseNodeData {
   inputImages: string[]; // Now supports multiple images
+  inputImageRefs?: string[]; // References for external image storage
   inputPrompt: string | null;
   outputImage: string | null;
+  outputImageRef?: string; // Reference for external image storage
   aspectRatio: AspectRatio;
   resolution: Resolution; // Only used by Nano Banana Pro
   model: ModelType;
@@ -133,6 +171,7 @@ export interface LLMGenerateNodeData extends BaseNodeData {
   inputPrompt: string | null;     // instruction/prompt text input
   inputContext: string | null;    // context/content text input (combined with prompt)
   inputImages: string[]; // optional multimodal context
+  inputImageRefs?: string[]; // References for external image storage
   outputText: string | null;
   outputImages: string[]; // passthrough of connected images for downstream nodes
   provider: LLMProvider;
@@ -147,15 +186,37 @@ export interface LLMGenerateNodeData extends BaseNodeData {
 // Output Node Data
 export interface OutputNodeData extends BaseNodeData {
   image: string | null;
+  imageRef?: string; // Reference for external image storage
+  sourceImageRef?: string; // Reference for source image
+  customTitle?: string;
+  comment?: string;
 }
 
 // Video Generation Node Data
+// Video aspect ratio options
+export type VideoAspectRatio = "16:9" | "9:16";
+
+// Video resolution options
+export type VideoResolution = "720p" | "1080p" | "4k";
+
+// Video duration options (in seconds)
+export type VideoDuration = 4 | 6 | 8;
+
+// Video model options
+export type VideoModel = "veo-3.1-fast" | "veo-3.1" | "kieai-veo3-fast" | "kieai-veo3";
+
 export interface VideoGenerateNodeData extends BaseNodeData {
   inputImage: string | null; // start frame
-  inputPrompt: string | null;
+  inputPrompt: string | null; // motion prompt
+  inputContext: string | null; // additional context (combined with prompt)
+  referenceImages: string[]; // up to 3 reference images for style/content guidance
   outputVideo: string | null; // video data URL or URL
   lastFrame: string | null;   // extracted last frame for chaining
-  duration: number;
+  model: VideoModel;
+  duration: VideoDuration;
+  aspectRatio: VideoAspectRatio;
+  resolution: VideoResolution;
+  chunkIndex: number; // which chunk to use when connected to a syllable chunker (1-indexed for display)
   status: NodeStatus;
   error: string | null;
 }
@@ -169,19 +230,77 @@ export interface ElevenLabsNodeData extends BaseNodeData {
   error: string | null;
 }
 
+// Split Grid Node Data
+export interface SplitGridGenerateSettings {
+  aspectRatio: AspectRatio;
+  resolution: Resolution;
+  model: ModelType;
+  useGoogleSearch: boolean;
+}
+
+export interface SplitGridChildNodeIds {
+  imageInput: string;
+  prompt: string;
+  nanoBanana: string;
+}
+
+export interface SplitGridNodeData extends BaseNodeData {
+  sourceImage: string | null;
+  sourceImageRef?: string; // Reference for external image storage
+  gridRows: number;
+  gridCols: number;
+  targetCount: number;
+  defaultPrompt: string;
+  generateSettings: SplitGridGenerateSettings;
+  childNodeIds: SplitGridChildNodeIds[];
+  isConfigured: boolean;
+  customTitle?: string;
+  comment?: string;
+  status: NodeStatus;
+  error: string | null;
+}
+
+// Syllable Chunker Node Data
+export interface SyllableChunkerNodeData extends BaseNodeData {
+  inputScript: string | null;
+  outputChunks: string[];
+  selectedChunkIndex: number;  // which chunk to output (0-indexed)
+  targetSyllables: number;     // default 58
+  chunkPrefix: string;         // prefix to prepend to each chunk (default "Dialogue: ")
+  status: NodeStatus;
+  error: string | null;
+}
+
+// Video Stitch Node Data - combines multiple videos into one
+export interface VideoStitchNodeData extends BaseNodeData {
+  inputVideos: { video: string; chunkIndex: number; sourceNodeId: string }[];  // videos with ordering info
+  outputVideo: string | null;  // stitched video data URL
+  iterationCount: number;      // number of times to regenerate and stitch (default 1)
+  currentIteration: number;    // current iteration being processed (0 = not running)
+  outputFolder: string | null; // folder path to save iterations
+  status: NodeStatus;
+  error: string | null;
+}
+
 // Union of all node data types
 export type WorkflowNodeData =
   | ImageInputNodeData
+  | VideoInputNodeData
   | AnnotationNodeData
   | PromptNodeData
   | NanoBananaNodeData
   | LLMGenerateNodeData
   | OutputNodeData
   | VideoGenerateNodeData
-  | ElevenLabsNodeData;
+  | ElevenLabsNodeData
+  | SyllableChunkerNodeData
+  | SplitGridNodeData
+  | VideoStitchNodeData;
 
-// Workflow Node with typed data
-export type WorkflowNode = Node<WorkflowNodeData, NodeType>;
+// Workflow Node with typed data and optional groupId
+export type WorkflowNode = Node<WorkflowNodeData, NodeType> & {
+  groupId?: string;
+};
 
 // Workflow Edge Data
 export interface WorkflowEdgeData extends Record<string, unknown> {
