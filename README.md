@@ -1,10 +1,10 @@
-# Node Banana
+# NodeMango 🥭
 
 > **Important note:** This is in early development, it probably has some issues. Use Chrome. For support or raising any issues join the [discord](https://discord.com/invite/89Nr6EKkTf).
 
-Node Banana is node-based workflow application for generating images with NBP. Build image generation pipelines by connecting nodes on a visual canvas. Built mainly with Opus 4.5.
+NodeMango is a node-based workflow application for AI content creation. Build image and video generation pipelines by connecting nodes on a visual canvas. Built mainly with Claude Opus 4.5.
 
-![Node Banana Screenshot](public/node-banana.png)
+![NodeMango Screenshot](public/nodemango.png)
 
 ## Features
 

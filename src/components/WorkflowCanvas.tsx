@@ -30,6 +30,9 @@ import {
   ElevenLabsNode,
   SyllableChunkerNode,
   VideoStitchNode,
+  VideoUpscaleNode,
+  AudioProcessNode,
+  CaptionNode,
 } from "./nodes";
 import { EditableEdge } from "./edges";
 import { ConnectionDropMenu, MenuAction } from "./ConnectionDropMenu";
@@ -52,6 +55,9 @@ const nodeTypes: NodeTypes = {
   elevenLabs: ElevenLabsNode,
   syllableChunker: SyllableChunkerNode,
   videoStitch: VideoStitchNode,
+  videoUpscale: VideoUpscaleNode,
+  audioProcess: AudioProcessNode,
+  caption: CaptionNode,
 };
 
 const edgeTypes: EdgeTypes = {
@@ -1016,6 +1022,12 @@ function WorkflowCanvasInner() {
                 return "#9333ea";
               case "videoStitch":
                 return "#14b8a6";
+              case "videoUpscale":
+                return "#a855f7"; // purple
+              case "audioProcess":
+                return "#0891b2"; // cyan
+              case "caption":
+                return "#f59e0b"; // amber
               case "output":
                 return "#ef4444";
               default:

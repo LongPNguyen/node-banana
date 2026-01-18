@@ -65,7 +65,7 @@ export const useSettingsStore = create<SettingsStore>()(
       },
     }),
     {
-      name: "node-banana-settings",
+      name: "nodemango-settings",
       // Only persist the API keys, not the modal state
       partialize: (state) => ({
         geminiApiKey: state.geminiApiKey,

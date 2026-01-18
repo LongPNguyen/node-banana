@@ -8,8 +8,8 @@ export function Header() {
   return (
     <header className="h-11 bg-neutral-900 border-b border-neutral-800 flex items-center justify-between px-4 shrink-0">
       <div className="flex items-center gap-2">
-        <img src="/banana_icon.png" alt="Banana" className="w-6 h-6" />
-        <h1 className="text-2xl font-semibold text-neutral-100 tracking-tight">Node Banana</h1>
+        <span className="text-2xl">🥭</span>
+        <h1 className="text-2xl font-semibold text-neutral-100 tracking-tight">NodeMango</h1>
       </div>
 
       {/* Connection color legend */}
@@ -58,7 +58,7 @@ export function Header() {
           rel="noopener noreferrer"
           className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors"
         >
-          Made by Willie enhanced by Long Nguyen
+          Made by Long Nguyen
         </a>
       </div>
     </header>

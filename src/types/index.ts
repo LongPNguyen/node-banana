@@ -28,7 +28,10 @@ export type NodeType =
   | "elevenLabs"
   | "syllableChunker"
   | "splitGrid"
-  | "videoStitch";
+  | "videoStitch"
+  | "videoUpscale"
+  | "audioProcess"
+  | "caption";
 
 // Aspect Ratios (supported by both Nano Banana and Nano Banana Pro)
 export type AspectRatio = "1:1" | "2:3" | "3:2" | "3:4" | "4:3" | "4:5" | "5:4" | "9:16" | "16:9" | "21:9";
@@ -211,6 +214,7 @@ export interface VideoGenerateNodeData extends BaseNodeData {
   inputContext: string | null; // additional context (combined with prompt)
   referenceImages: string[]; // up to 3 reference images for style/content guidance
   outputVideo: string | null; // video data URL or URL
+  originalVideo: string | null; // pre-trim video backup for undo
   lastFrame: string | null;   // extracted last frame for chaining
   model: VideoModel;
   duration: VideoDuration;
@@ -282,6 +286,79 @@ export interface VideoStitchNodeData extends BaseNodeData {
   error: string | null;
 }
 
+// Video Upscale Target Resolutions
+export type UpscaleResolution = "1080p" | "1440p" | "4k";
+
+// Video Upscale Node Data - upscale video resolution
+export interface VideoUpscaleNodeData extends BaseNodeData {
+  inputVideo: string | null;      // video to upscale (base64 data URL)
+  outputVideo: string | null;     // upscaled video
+  targetResolution: UpscaleResolution;
+  sharpen: boolean;               // apply sharpening filter
+  originalResolution: string | null;  // e.g., "1280x720"
+  newResolution: string | null;       // e.g., "1920x1080"
+  status: NodeStatus;
+  error: string | null;
+}
+
+// Audio Noise Reduction Level
+export type NoiseReductionLevel = "light" | "medium" | "heavy";
+
+// Audio Process Node Data - noise reduction for video audio
+export interface AudioProcessNodeData extends BaseNodeData {
+  inputVideo: string | null;      // video to process (base64 data URL)
+  outputVideo: string | null;     // processed video with clean audio
+  noiseReduction: NoiseReductionLevel;
+  status: NodeStatus;
+  error: string | null;
+}
+
+// Caption Word with timing (from Whisper API)
+export interface CaptionWord {
+  word: string;
+  start: number;  // seconds
+  end: number;    // seconds
+}
+
+// Caption style options
+export type CaptionPosition = "top" | "center" | "bottom";
+export type CaptionAnimation = "none" | "fade" | "pop" | "karaoke";
+
+// Highlight style for karaoke mode
+export type HighlightStyle = "color" | "box";
+
+export interface CaptionStyle {
+  preset: string;              // Preset name or "custom"
+  fontFamily: string;
+  fontSize: number;
+  fontColor: string;
+  strokeColor: string;
+  strokeWidth: number;
+  backgroundColor: string | null;  // null = transparent
+  shadowColor: string | null;      // null = no shadow
+  shadowDepth: number;
+  glowColor: string | null;        // null = no glow
+  bold: boolean;
+  italic: boolean;
+  uppercase: boolean;
+  position: CaptionPosition;
+  animation: CaptionAnimation;
+  wordsPerLine: number;        // How many words per caption line
+  highlightColor: string;      // Color for karaoke word highlight
+  highlightStyle: HighlightStyle;  // "color" = text color change, "box" = background box like CapCut
+}
+
+// Caption Node Data - auto-transcription with CapCut-style captions
+export interface CaptionNodeData extends BaseNodeData {
+  inputVideo: string | null;
+  outputVideo: string | null;
+  transcription: CaptionWord[] | null;
+  editedTranscript: string | null;  // User-edited text (plain text for re-timing)
+  style: CaptionStyle;
+  status: NodeStatus;
+  error: string | null;
+}
+
 // Union of all node data types
 export type WorkflowNodeData =
   | ImageInputNodeData
@@ -295,7 +372,10 @@ export type WorkflowNodeData =
   | ElevenLabsNodeData
   | SyllableChunkerNodeData
   | SplitGridNodeData
-  | VideoStitchNodeData;
+  | VideoStitchNodeData
+  | VideoUpscaleNodeData
+  | AudioProcessNodeData
+  | CaptionNodeData;
 
 // Workflow Node with typed data and optional groupId
 export type WorkflowNode = Node<WorkflowNodeData, NodeType> & {

@@ -13,6 +13,7 @@ interface ValidationResult {
 
 const VALID_NODE_TYPES: NodeType[] = [
   "imageInput",
+  "videoInput",
   "annotation",
   "prompt",
   "nanoBanana",
@@ -22,6 +23,10 @@ const VALID_NODE_TYPES: NodeType[] = [
   "videoGenerate",
   "elevenLabs",
   "syllableChunker",
+  "videoStitch",
+  "videoUpscale",
+  "audioProcess",
+  "caption",
 ];
 
 const VALID_HANDLE_TYPES = ["image", "text", "reference", "video", "audio"];
@@ -36,10 +41,13 @@ const DEFAULT_DIMENSIONS: Record<NodeType, { width: number; height: number }> = 
   llmGenerate: { width: 320, height: 360 },
   splitGrid: { width: 300, height: 320 },
   output: { width: 320, height: 320 },
-  videoGenerate: { width: 340, height: 360 },
+  videoGenerate: { width: 340, height: 580 },
   elevenLabs: { width: 340, height: 300 },
   syllableChunker: { width: 340, height: 320 },
   videoStitch: { width: 340, height: 380 },
+  videoUpscale: { width: 320, height: 340 },
+  audioProcess: { width: 320, height: 320 },
+  caption: { width: 360, height: 620 },
 };
 
 /**
@@ -274,6 +282,7 @@ function createDefaultNodeData(type: NodeType): WorkflowNodeData {
         inputContext: null,
         referenceImages: [],
         outputVideo: null,
+        originalVideo: null,
         lastFrame: null,
         model: "veo-3.1-fast",
         duration: 8,
@@ -308,6 +317,54 @@ function createDefaultNodeData(type: NodeType): WorkflowNodeData {
         iterationCount: 1,
         currentIteration: 0,
         outputFolder: null,
+        status: "idle",
+        error: null,
+      };
+    case "videoUpscale":
+      return {
+        inputVideo: null,
+        outputVideo: null,
+        targetResolution: "1080p",
+        sharpen: true,
+        originalResolution: null,
+        newResolution: null,
+        status: "idle",
+        error: null,
+      };
+    case "audioProcess":
+      return {
+        inputVideo: null,
+        outputVideo: null,
+        noiseReduction: "medium",
+        status: "idle",
+        error: null,
+      };
+    case "caption":
+      return {
+        inputVideo: null,
+        outputVideo: null,
+        transcription: null,
+        editedTranscript: null,
+        style: {
+          preset: "classic",
+          fontFamily: "Arial",
+          fontSize: 48,
+          fontColor: "#FFFFFF",
+          strokeColor: "#000000",
+          strokeWidth: 3,
+          backgroundColor: null,
+          shadowColor: "#000000",
+          shadowDepth: 2,
+          glowColor: null,
+          bold: true,
+          italic: false,
+          uppercase: false,
+          position: "bottom",
+          animation: "none",
+          wordsPerLine: 4,
+          highlightColor: "#FFFF00",
+          highlightStyle: "box",
+        },
         status: "idle",
         error: null,
       };

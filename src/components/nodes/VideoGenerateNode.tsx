@@ -128,10 +128,12 @@ export const VideoGenerateNode = memo(({ id, data, selected }: NodeProps<VideoGe
 
   // Trim controls state
   const [showTrimControls, setShowTrimControls] = useState(false);
+  const [trimStartTime, setTrimStartTime] = useState<number>(0);
   const [trimEndTime, setTrimEndTime] = useState<number | null>(null);
   const [videoDuration, setVideoDuration] = useState<number | null>(null);
   const [isTrimming, setIsTrimming] = useState(false);
   const [trimPreviewFrame, setTrimPreviewFrame] = useState<string | null>(null);
+  const [activePreview, setActivePreview] = useState<"start" | "end">("end"); // Which slider is being previewed
   const FRAME_STEP = 1 / 30; // ~33ms for 30fps
 
   // Get video duration when video loads
@@ -139,12 +141,14 @@ export const VideoGenerateNode = memo(({ id, data, selected }: NodeProps<VideoGe
     const video = videoRef.current;
     if (!video || !nodeData.outputVideo) {
       setVideoDuration(null);
+      setTrimStartTime(0);
       setTrimEndTime(null);
       return;
     }
 
     const handleLoadedMetadata = () => {
       setVideoDuration(video.duration);
+      setTrimStartTime(0); // Default to start
       setTrimEndTime(video.duration); // Default to full length
     };
 
@@ -187,23 +191,44 @@ export const VideoGenerateNode = memo(({ id, data, selected }: NodeProps<VideoGe
   // Update preview when trim time changes
   useEffect(() => {
     if (showTrimControls && trimEndTime !== null && videoDuration !== null) {
-      captureFrameAtTime(Math.max(0, trimEndTime - 0.01));
+      // Preview the active slider position
+      const previewTime = activePreview === "start"
+        ? Math.max(0, trimStartTime + 0.01)  // Slightly after start
+        : Math.max(0, trimEndTime - 0.01);   // Slightly before end
+      captureFrameAtTime(previewTime);
     }
-  }, [trimEndTime, showTrimControls, videoDuration, captureFrameAtTime]);
+  }, [trimStartTime, trimEndTime, showTrimControls, videoDuration, activePreview, captureFrameAtTime]);
 
-  // Handle trim slider change
-  const handleTrimSliderChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle trim slider changes
+  const handleTrimStartChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseFloat(e.target.value);
-    setTrimEndTime(value);
-  }, []);
+    setTrimStartTime(Math.min(value, (trimEndTime ?? videoDuration ?? value) - 0.1));
+    setActivePreview("start");
+  }, [trimEndTime, videoDuration]);
 
-  // Frame-by-frame navigation
-  const handleFrameStep = useCallback((direction: "back" | "forward") => {
+  const handleTrimEndChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = parseFloat(e.target.value);
+    setTrimEndTime(Math.max(value, trimStartTime + 0.1));
+    setActivePreview("end");
+  }, [trimStartTime]);
+
+  // Frame-by-frame navigation for start time
+  const handleStartFrameStep = useCallback((direction: "back" | "forward") => {
     if (trimEndTime === null || videoDuration === null) return;
     const step = direction === "forward" ? FRAME_STEP : -FRAME_STEP;
-    const newTime = Math.max(0.1, Math.min(videoDuration, trimEndTime + step));
+    const newTime = Math.max(0, Math.min(trimEndTime - 0.1, trimStartTime + step));
+    setTrimStartTime(newTime);
+    setActivePreview("start");
+  }, [trimStartTime, trimEndTime, videoDuration, FRAME_STEP]);
+
+  // Frame-by-frame navigation for end time
+  const handleEndFrameStep = useCallback((direction: "back" | "forward") => {
+    if (trimEndTime === null || videoDuration === null) return;
+    const step = direction === "forward" ? FRAME_STEP : -FRAME_STEP;
+    const newTime = Math.max(trimStartTime + 0.1, Math.min(videoDuration, trimEndTime + step));
     setTrimEndTime(newTime);
-  }, [trimEndTime, videoDuration, FRAME_STEP]);
+    setActivePreview("end");
+  }, [trimStartTime, trimEndTime, videoDuration, FRAME_STEP]);
 
   // Apply trim
   const handleApplyTrim = useCallback(async () => {
@@ -216,19 +241,25 @@ export const VideoGenerateNode = memo(({ id, data, selected }: NodeProps<VideoGe
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           video: nodeData.outputVideo,
+          startTime: trimStartTime,
           endTime: trimEndTime,
         }),
       });
 
       const result = await response.json();
       if (result.success) {
-        updateNodeData(id, {
+        // Save original video for undo (only on first trim)
+        const updates: Partial<VideoGenerateNodeData> = {
           outputVideo: result.video,
           lastFrame: result.frame || nodeData.lastFrame,
-        });
+        };
+        if (!nodeData.originalVideo) {
+          updates.originalVideo = nodeData.outputVideo;
+        }
+        updateNodeData(id, updates);
         setShowTrimControls(false);
         setTrimPreviewFrame(null);
-        console.log(`[VideoGenerate] Trimmed video to ${trimEndTime.toFixed(3)}s`);
+        console.log(`[VideoGenerate] Trimmed video from ${trimStartTime.toFixed(3)}s to ${trimEndTime.toFixed(3)}s`);
       } else {
         console.error("[VideoGenerate] Trim failed:", result.error);
         alert(`Trim failed: ${result.error}`);
@@ -239,7 +270,19 @@ export const VideoGenerateNode = memo(({ id, data, selected }: NodeProps<VideoGe
     } finally {
       setIsTrimming(false);
     }
-  }, [id, nodeData.outputVideo, nodeData.lastFrame, trimEndTime, isTrimming, updateNodeData]);
+  }, [id, nodeData.outputVideo, nodeData.originalVideo, nodeData.lastFrame, trimStartTime, trimEndTime, isTrimming, updateNodeData]);
+
+  // Undo trim - restore original video
+  const handleUndoTrim = useCallback(() => {
+    if (!nodeData.originalVideo) return;
+    updateNodeData(id, {
+      outputVideo: nodeData.originalVideo,
+      originalVideo: null,
+      lastFrame: null, // Will need re-extraction
+    });
+    setTrimStartTime(0);
+    console.log("[VideoGenerate] Undo trim - restored original video");
+  }, [id, nodeData.originalVideo, updateNodeData]);
 
   const handleReExtractFrame = useCallback(async () => {
     if (!nodeData.outputVideo || isExtractingFrame) return;
@@ -276,8 +319,8 @@ export const VideoGenerateNode = memo(({ id, data, selected }: NodeProps<VideoGe
       title="Video Generate (Veo 3.1)"
       selected={selected}
       hasError={nodeData.status === "error"}
-      minWidth={320}
-      minHeight={400}
+      minWidth={340}
+      minHeight={580}
     >
       {/* Color-coded handles - see legend in node */}
 
@@ -498,7 +541,18 @@ export const VideoGenerateNode = memo(({ id, data, selected }: NodeProps<VideoGe
         {nodeData.outputVideo && videoDuration && (
           <div className="border border-neutral-700 rounded p-2 bg-neutral-900/30">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-[9px] text-neutral-500 uppercase tracking-wider">Trim Video</span>
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] text-neutral-500 uppercase tracking-wider">Trim Video</span>
+                {nodeData.originalVideo && (
+                  <button
+                    onClick={handleUndoTrim}
+                    className="nodrag text-[8px] px-1.5 py-0.5 bg-yellow-600/80 hover:bg-yellow-500 rounded text-white"
+                    title="Restore original video"
+                  >
+                    Undo
+                  </button>
+                )}
+              </div>
               <button
                 onClick={() => setShowTrimControls(!showTrimControls)}
                 className="text-[9px] text-blue-400 hover:text-blue-300"
@@ -508,7 +562,7 @@ export const VideoGenerateNode = memo(({ id, data, selected }: NodeProps<VideoGe
             </div>
 
             {showTrimControls && (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {/* Trim preview */}
                 {trimPreviewFrame && (
                   <div className="relative">
@@ -518,55 +572,90 @@ export const VideoGenerateNode = memo(({ id, data, selected }: NodeProps<VideoGe
                       className="w-full h-20 object-contain bg-black rounded border border-neutral-700"
                     />
                     <span className="absolute bottom-1 right-1 text-[8px] bg-black/80 px-1 rounded text-neutral-300">
-                      Frame at {trimEndTime?.toFixed(3)}s
+                      {activePreview === "start" ? "Start" : "End"}: {activePreview === "start" ? trimStartTime.toFixed(3) : trimEndTime?.toFixed(3)}s
                     </span>
                   </div>
                 )}
 
-                {/* Time slider */}
+                {/* Start time slider */}
                 <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[8px] text-green-400 font-medium">Start Time</span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleStartFrameStep("back")}
+                        disabled={isTrimming}
+                        className="nodrag px-1.5 py-0.5 text-[8px] bg-neutral-700 hover:bg-neutral-600 disabled:opacity-50 rounded text-neutral-300"
+                        title="Previous frame"
+                      >
+                        ←
+                      </button>
+                      <span className="text-[8px] text-green-400 font-mono w-12 text-center">{trimStartTime.toFixed(3)}s</span>
+                      <button
+                        onClick={() => handleStartFrameStep("forward")}
+                        disabled={isTrimming}
+                        className="nodrag px-1.5 py-0.5 text-[8px] bg-neutral-700 hover:bg-neutral-600 disabled:opacity-50 rounded text-neutral-300"
+                        title="Next frame"
+                      >
+                        →
+                      </button>
+                    </div>
+                  </div>
                   <input
                     type="range"
-                    min={0.1}
+                    min={0}
+                    max={videoDuration}
+                    step={0.001}
+                    value={trimStartTime}
+                    onChange={handleTrimStartChange}
+                    className="nodrag w-full h-2 bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-green-500"
+                  />
+                </div>
+
+                {/* End time slider */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[8px] text-blue-400 font-medium">End Time</span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleEndFrameStep("back")}
+                        disabled={isTrimming}
+                        className="nodrag px-1.5 py-0.5 text-[8px] bg-neutral-700 hover:bg-neutral-600 disabled:opacity-50 rounded text-neutral-300"
+                        title="Previous frame"
+                      >
+                        ←
+                      </button>
+                      <span className="text-[8px] text-blue-400 font-mono w-12 text-center">{trimEndTime?.toFixed(3)}s</span>
+                      <button
+                        onClick={() => handleEndFrameStep("forward")}
+                        disabled={isTrimming}
+                        className="nodrag px-1.5 py-0.5 text-[8px] bg-neutral-700 hover:bg-neutral-600 disabled:opacity-50 rounded text-neutral-300"
+                        title="Next frame"
+                      >
+                        →
+                      </button>
+                    </div>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
                     max={videoDuration}
                     step={0.001}
                     value={trimEndTime ?? videoDuration}
-                    onChange={handleTrimSliderChange}
+                    onChange={handleTrimEndChange}
                     className="nodrag w-full h-2 bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
                   />
-                  <div className="flex justify-between text-[8px] text-neutral-500">
-                    <span>0.1s</span>
-                    <span className="text-blue-400 font-mono">{trimEndTime?.toFixed(3)}s</span>
-                    <span>{videoDuration.toFixed(1)}s</span>
-                  </div>
                 </div>
 
-                {/* Frame navigation and apply */}
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => handleFrameStep("back")}
-                      disabled={isTrimming}
-                      className="nodrag px-2 py-1 text-[9px] bg-neutral-700 hover:bg-neutral-600 disabled:opacity-50 rounded text-neutral-300"
-                      title="Previous frame (−33ms)"
-                    >
-                      ← Frame
-                    </button>
-                    <button
-                      onClick={() => handleFrameStep("forward")}
-                      disabled={isTrimming}
-                      className="nodrag px-2 py-1 text-[9px] bg-neutral-700 hover:bg-neutral-600 disabled:opacity-50 rounded text-neutral-300"
-                      title="Next frame (+33ms)"
-                    >
-                      Frame →
-                    </button>
-                  </div>
-
-                  <div className="flex-1" />
-
+                {/* Duration info and apply */}
+                <div className="flex items-center justify-between">
+                  <span className="text-[8px] text-neutral-400">
+                    Duration: <span className="text-white font-mono">{((trimEndTime ?? videoDuration) - trimStartTime).toFixed(3)}s</span>
+                    {" "}(original: {videoDuration.toFixed(1)}s)
+                  </span>
                   <button
                     onClick={handleApplyTrim}
-                    disabled={isTrimming || trimEndTime === videoDuration}
+                    disabled={isTrimming || (trimStartTime === 0 && trimEndTime === videoDuration)}
                     className="nodrag px-3 py-1 text-[9px] bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed rounded text-white font-medium"
                     title="Apply trim and extract new last frame"
                   >
@@ -575,7 +664,7 @@ export const VideoGenerateNode = memo(({ id, data, selected }: NodeProps<VideoGe
                 </div>
 
                 <p className="text-[8px] text-neutral-500">
-                  Trim video to remove ghosting at the end. The frame at this point becomes the new last frame.
+                  Trim video from start and/or end to remove unwanted content. The last frame becomes the new chain frame.
                 </p>
               </div>
             )}

@@ -91,7 +91,7 @@ export const BaseNode = memo(({
         <div className="px-3 pt-2 pb-1">
           <span className="text-xs font-semibold uppercase tracking-wide text-neutral-400">{title}</span>
         </div>
-        <div className="px-3 pb-4 h-[calc(100%-28px)] overflow-hidden flex flex-col">{children}</div>
+        <div className="px-3 pb-4 h-[calc(100%-28px)] overflow-y-auto flex flex-col">{children}</div>
       </div>
     </>
   );

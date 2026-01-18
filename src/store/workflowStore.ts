@@ -24,6 +24,9 @@ import {
   SyllableChunkerNodeData,
   SplitGridNodeData,
   VideoStitchNodeData,
+  VideoUpscaleNodeData,
+  AudioProcessNodeData,
+  CaptionNodeData,
   WorkflowNodeData,
   ImageHistoryItem,
   WorkflowMetadata,
@@ -246,6 +249,7 @@ const createDefaultNodeData = (type: NodeType): WorkflowNodeData => {
         inputContext: null,
         referenceImages: [],
         outputVideo: null,
+        originalVideo: null, // Pre-trim backup for undo
         lastFrame: null,
         model: "veo-3.1-fast",
         duration: 8,
@@ -301,6 +305,54 @@ const createDefaultNodeData = (type: NodeType): WorkflowNodeData => {
         status: "idle",
         error: null,
       } as VideoStitchNodeData;
+    case "videoUpscale":
+      return {
+        inputVideo: null,
+        outputVideo: null,
+        targetResolution: "1080p",
+        sharpen: true,
+        originalResolution: null,
+        newResolution: null,
+        status: "idle",
+        error: null,
+      } as VideoUpscaleNodeData;
+    case "audioProcess":
+      return {
+        inputVideo: null,
+        outputVideo: null,
+        noiseReduction: "medium",
+        status: "idle",
+        error: null,
+      } as AudioProcessNodeData;
+    case "caption":
+      return {
+        inputVideo: null,
+        outputVideo: null,
+        transcription: null,
+        editedTranscript: null,
+        style: {
+          preset: "classic",
+          fontFamily: "Arial",
+          fontSize: 48,
+          fontColor: "#FFFFFF",
+          strokeColor: "#000000",
+          strokeWidth: 3,
+          backgroundColor: null,
+          shadowColor: "#000000",
+          shadowDepth: 2,
+          glowColor: null,
+          bold: true,
+          italic: false,
+          uppercase: false,
+          position: "bottom",
+          animation: "none",
+          wordsPerLine: 4,
+          highlightColor: "#FFFF00",
+          highlightStyle: "box",
+        },
+        status: "idle",
+        error: null,
+      } as CaptionNodeData;
   }
 };
 
@@ -371,12 +423,12 @@ const chunkBySyllables = (text: string, targetSyllables: number, prefix: string 
 };
 
 // IndexedDB helper for multi-workflow storage
-const DB_NAME = "node-banana-db";
+const DB_NAME = "nodemango-db";
 const DB_VERSION = 2; // Upgraded for multi-workflow support
 const STORE_NAME = "states"; // Legacy store
 const WORKFLOWS_STORE = "workflows"; // New: individual workflow data
 const META_STORE = "meta"; // New: app-level metadata
-const STATE_KEY = "node-banana-workflow"; // Legacy key
+const STATE_KEY = "nodemango-workflow"; // Legacy key
 
 // Stored workflow structure
 interface StoredWorkflow {
@@ -466,7 +518,7 @@ const loadFromIndexedDB = async (): Promise<{
   try {
     // Cleanup old localStorage version if it exists
     if (typeof window !== "undefined") {
-      localStorage.removeItem("node-banana-workflow");
+      localStorage.removeItem("nodemango-workflow");
     }
 
     const db = await getDB();
@@ -1087,11 +1139,14 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => {
       nanoBanana: { width: 300, height: 300 },
       llmGenerate: { width: 320, height: 360 },
       output: { width: 320, height: 320 },
-      videoGenerate: { width: 320, height: 380 },
+      videoGenerate: { width: 340, height: 580 },
       elevenLabs: { width: 300, height: 200 },
       syllableChunker: { width: 340, height: 320 },
       splitGrid: { width: 300, height: 320 },
       videoStitch: { width: 340, height: 380 },
+      videoUpscale: { width: 320, height: 340 },
+      audioProcess: { width: 320, height: 320 },
+      caption: { width: 360, height: 620 },
     };
 
     const { width, height } = defaultDimensions[type];
@@ -2714,7 +2769,7 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => {
     // Cost tracking is stored in localStorage per workflow
     const workflowId = get().currentWorkflowId;
     if (workflowId) {
-      const costsKey = "node-banana-workflow-costs";
+      const costsKey = "nodemango-workflow-costs";
       try {
         const costs = JSON.parse(localStorage.getItem(costsKey) || "{}");
         costs[workflowId] = 0;

@@ -21,7 +21,7 @@ OPENAI_API_KEY=your_openai_api_key  # Optional, for OpenAI LLM provider
 
 ## Architecture Overview
 
-Node Banana is a node-based visual workflow editor for AI image generation. Users drag nodes onto a React Flow canvas, connect them via typed handles, and execute pipelines that call AI APIs.
+NodeMango is a node-based visual workflow editor for AI content creation. Users drag nodes onto a React Flow canvas, connect them via typed handles, and execute pipelines that call AI APIs.
 
 ### Core Stack
 - **Next.js 16** (App Router) with TypeScript
@@ -161,6 +161,6 @@ All routes in `src/app/api/`:
 
 ## localStorage Keys
 
-- `node-banana-workflow-configs` - Project metadata (paths)
-- `node-banana-workflow-costs` - Cost tracking per workflow
-- `node-banana-nanoBanana-defaults` - Sticky generation settings
+- `nodemango-workflow-configs` - Project metadata (paths)
+- `nodemango-workflow-costs` - Cost tracking per workflow
+- `nodemango-nanoBanana-defaults` - Sticky generation settings

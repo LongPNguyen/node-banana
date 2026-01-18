@@ -9,4 +9,7 @@ export { VideoGenerateNode } from "./VideoGenerateNode";
 export { ElevenLabsNode } from "./ElevenLabsNode";
 export { SyllableChunkerNode } from "./SyllableChunkerNode";
 export { VideoStitchNode } from "./VideoStitchNode";
+export { VideoUpscaleNode } from "./VideoUpscaleNode";
+export { AudioProcessNode } from "./AudioProcessNode";
+export { CaptionNode } from "./CaptionNode";
 export { ExecuteButton } from "./ExecuteButton";

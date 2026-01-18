@@ -8,6 +8,7 @@ export const maxDuration = 120; // 2 minute timeout
 
 interface TrimRequest {
   video: string; // Base64 data URL
+  startTime?: number; // Start time in seconds (default: 0)
   endTime: number; // End time in seconds (with millisecond precision)
 }
 
@@ -140,7 +141,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body: TrimRequest = await request.json();
-    const { video, endTime } = body;
+    const { video, startTime = 0, endTime } = body;
 
     if (!video) {
       return NextResponse.json(
@@ -152,6 +153,20 @@ export async function POST(request: NextRequest) {
     if (typeof endTime !== "number" || endTime <= 0) {
       return NextResponse.json(
         { success: false, error: "Invalid end time" },
+        { status: 400 }
+      );
+    }
+
+    if (typeof startTime !== "number" || startTime < 0) {
+      return NextResponse.json(
+        { success: false, error: "Invalid start time" },
+        { status: 400 }
+      );
+    }
+
+    if (startTime >= endTime) {
+      return NextResponse.json(
+        { success: false, error: "Start time must be less than end time" },
         { status: 400 }
       );
     }
@@ -178,9 +193,11 @@ export async function POST(request: NextRequest) {
     const videoInfo = await getVideoInfo(inputPath);
     const originalDuration = videoInfo.duration;
     const fps = videoInfo.fps;
+    const trimStartTime = Math.max(0, Math.min(startTime, originalDuration));
     const trimEndTime = Math.min(endTime, originalDuration);
+    const trimmedDuration = trimEndTime - trimStartTime;
 
-    console.log(`[Video Trim] Original duration: ${originalDuration}s, FPS: ${fps}, trimming to: ${trimEndTime}s`);
+    console.log(`[Video Trim] Original duration: ${originalDuration}s, FPS: ${fps}, trimming from ${trimStartTime}s to ${trimEndTime}s (${trimmedDuration}s)`);
 
     // Trim video using ffmpeg with re-encoding to ensure correct metadata
     // Re-encoding is slower but gives accurate duration in the output container
@@ -189,15 +206,15 @@ export async function POST(request: NextRequest) {
     // This ensures frame-accurate trimming rather than keyframe-based
 
     // Calculate frame count using actual fps
-    const frameCount = Math.floor(trimEndTime * fps);
+    const frameCount = Math.floor(trimmedDuration * fps);
 
     // Use video/audio trim filters - most reliable for precise trimming
     // This works at the filter level and properly sets the output duration
     const trimArgs = [
       "-y",
       "-i", inputPath,
-      "-vf", `trim=start=0:end=${trimEndTime.toFixed(3)},setpts=PTS-STARTPTS`,
-      "-af", `atrim=start=0:end=${trimEndTime.toFixed(3)},asetpts=PTS-STARTPTS`,
+      "-vf", `trim=start=${trimStartTime.toFixed(3)}:end=${trimEndTime.toFixed(3)},setpts=PTS-STARTPTS`,
+      "-af", `atrim=start=${trimStartTime.toFixed(3)}:end=${trimEndTime.toFixed(3)},asetpts=PTS-STARTPTS`,
       "-c:v", "libx264",
       "-preset", "fast",
       "-crf", "23",
@@ -215,18 +232,18 @@ export async function POST(request: NextRequest) {
     } catch {
       outputDuration = 0;
     }
-    console.log(`[Video Trim] First attempt duration: ${outputDuration}s (target: ${trimEndTime}s), diff: ${Math.abs(outputDuration - trimEndTime).toFixed(3)}s`);
+    console.log(`[Video Trim] First attempt duration: ${outputDuration}s (target: ${trimmedDuration}s), diff: ${Math.abs(outputDuration - trimmedDuration).toFixed(3)}s`);
 
     // If off by more than 1 frame (at 24fps that's ~0.042s), try another approach
-    if (!trimResult.success || Math.abs(outputDuration - trimEndTime) > 0.05) {
+    if (!trimResult.success || Math.abs(outputDuration - trimmedDuration) > 0.05) {
       console.log(`[Video Trim] First attempt resulted in ${outputDuration}s, trying frame-based trim...`);
 
       const reencodeArgs = [
         "-y",
         "-accurate_seek",
-        "-ss", "0",
+        "-ss", trimStartTime.toFixed(3),
         "-i", inputPath,
-        "-to", trimEndTime.toFixed(3),
+        "-t", trimmedDuration.toFixed(3),
         "-frames:v", frameCount.toString(),  // Also limit by frame count as safety
         "-c:v", "libx264",
         "-preset", "fast",
@@ -244,21 +261,22 @@ export async function POST(request: NextRequest) {
       // Check second attempt duration
       try {
         outputDuration = await getVideoDuration(outputPath);
-        console.log(`[Video Trim] Second attempt duration: ${outputDuration}s (target: ${trimEndTime}s), diff: ${Math.abs(outputDuration - trimEndTime).toFixed(3)}s`);
+        console.log(`[Video Trim] Second attempt duration: ${outputDuration}s (target: ${trimmedDuration}s), diff: ${Math.abs(outputDuration - trimmedDuration).toFixed(3)}s`);
       } catch {
         outputDuration = 0;
       }
     }
 
-    // Third attempt: Use -t with copy codec (sometimes metadata issues are codec-related)
-    if (!trimResult.success || Math.abs(outputDuration - trimEndTime) > 0.05) {
-      console.log(`[Video Trim] Second attempt resulted in ${outputDuration}s, trying -t based trim...`);
+    // Third attempt: Use -ss before -i with -t duration
+    if (!trimResult.success || Math.abs(outputDuration - trimmedDuration) > 0.05) {
+      console.log(`[Video Trim] Second attempt resulted in ${outputDuration}s, trying -ss -t based trim...`);
 
       // Use a slightly different encoding approach with explicit duration
       const filterArgs = [
         "-y",
+        "-ss", trimStartTime.toFixed(3),
         "-i", inputPath,
-        "-t", trimEndTime.toFixed(3),
+        "-t", trimmedDuration.toFixed(3),
         "-c:v", "libx264",
         "-preset", "fast",
         "-crf", "23",
@@ -268,13 +286,13 @@ export async function POST(request: NextRequest) {
         "-movflags", "+faststart",
         outputPath
       ];
-      console.log(`[Video Trim] Using -t duration: ffmpeg ${filterArgs.join(" ")}`);
+      console.log(`[Video Trim] Using -ss -t duration: ffmpeg ${filterArgs.join(" ")}`);
       trimResult = await runFFmpeg(filterArgs);
 
       // Check third attempt duration
       try {
         outputDuration = await getVideoDuration(outputPath);
-        console.log(`[Video Trim] Third attempt duration: ${outputDuration}s (target: ${trimEndTime}s), diff: ${Math.abs(outputDuration - trimEndTime).toFixed(3)}s`);
+        console.log(`[Video Trim] Third attempt duration: ${outputDuration}s (target: ${trimmedDuration}s), diff: ${Math.abs(outputDuration - trimmedDuration).toFixed(3)}s`);
       } catch {
         outputDuration = 0;
       }
