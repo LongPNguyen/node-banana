@@ -36,12 +36,17 @@ import {
   VoiceSwapNode,
   SoundEffectsNode,
   MusicGenerateNode,
+  MotionCaptureNode,
+  RemotionNode,
+  VideoComposerNode,
+  GreenScreenNode,
 } from "./nodes";
 import { EditableEdge } from "./edges";
 import { ConnectionDropMenu, MenuAction } from "./ConnectionDropMenu";
 import { MultiSelectToolbar } from "./MultiSelectToolbar";
 import { EdgeToolbar } from "./EdgeToolbar";
 import { GlobalImageHistory } from "./GlobalImageHistory";
+import { FloatingActionBar } from "./FloatingActionBar";
 import { NodeType, NanoBananaNodeData } from "@/types";
 import { detectAndSplitGrid } from "@/utils/gridSplitter";
 import { useToast } from "@/components/Toast";
@@ -64,6 +69,10 @@ const nodeTypes: NodeTypes = {
   voiceSwap: VoiceSwapNode,
   soundEffects: SoundEffectsNode,
   musicGenerate: MusicGenerateNode,
+  motionCapture: MotionCaptureNode,
+  remotion: RemotionNode,
+  videoComposer: VideoComposerNode,
+  greenScreen: GreenScreenNode,
 };
 
 const edgeTypes: EdgeTypes = {
@@ -124,6 +133,12 @@ const getNodeHandles = (nodeType: string): { inputs: string[]; outputs: string[]
     case "syllableChunker":
       return { inputs: ["text"], outputs: ["text"] };
     case "videoStitch":
+      return { inputs: ["video"], outputs: ["video"] };
+    case "remotion":
+      return { inputs: ["video"], outputs: ["video"] };
+    case "videoComposer":
+      return { inputs: ["text", "video", "image"], outputs: ["video"] };
+    case "greenScreen":
       return { inputs: ["video"], outputs: ["video"] };
     case "output":
       return { inputs: ["image", "video", "audio"], outputs: [] };
@@ -490,10 +505,10 @@ function WorkflowCanvasInner() {
           sourceHandleIdForNewNode = "text";
         }
       } else if (handleType === "video") {
-        if (nodeType === "output" || nodeType === "videoStitch" || nodeType === "audioProcess" || nodeType === "caption" || nodeType === "videoUpscale" || nodeType === "voiceSwap") {
+        if (nodeType === "output" || nodeType === "videoStitch" || nodeType === "audioProcess" || nodeType === "caption" || nodeType === "videoUpscale" || nodeType === "voiceSwap" || nodeType === "motionCapture" || nodeType === "remotion" || nodeType === "videoComposer" || nodeType === "greenScreen") {
           targetHandleId = "video";
         }
-        if (nodeType === "videoGenerate" || nodeType === "videoInput" || nodeType === "videoStitch" || nodeType === "audioProcess" || nodeType === "caption" || nodeType === "videoUpscale" || nodeType === "voiceSwap") {
+        if (nodeType === "videoGenerate" || nodeType === "videoInput" || nodeType === "videoStitch" || nodeType === "audioProcess" || nodeType === "caption" || nodeType === "videoUpscale" || nodeType === "voiceSwap" || nodeType === "motionCapture" || nodeType === "remotion" || nodeType === "videoComposer" || nodeType === "greenScreen") {
           sourceHandleIdForNewNode = "video";
         }
       } else if (handleType === "audio") {
@@ -990,6 +1005,8 @@ function WorkflowCanvasInner() {
         edgeTypes={edgeTypes}
         isValidConnection={isValidConnection}
         fitView
+        minZoom={0.1}
+        maxZoom={4}
         deleteKeyCode={["Backspace", "Delete"]}
         multiSelectionKeyCode="Shift"
         selectionOnDrag={false}
@@ -1041,6 +1058,14 @@ function WorkflowCanvasInner() {
                 return "#f59e0b"; // amber
               case "musicGenerate":
                 return "#ec4899"; // pink
+              case "motionCapture":
+                return "#06b6d4"; // cyan
+              case "remotion":
+                return "#6366f1"; // indigo
+              case "videoComposer":
+                return "#6366f1"; // indigo
+              case "greenScreen":
+                return "#22c55e"; // green
               case "output":
                 return "#ef4444";
               default:
@@ -1078,6 +1103,7 @@ export function WorkflowCanvas() {
   return (
     <ReactFlowProvider>
       <WorkflowCanvasInner />
+      <FloatingActionBar />
     </ReactFlowProvider>
   );
 }

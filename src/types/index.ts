@@ -34,7 +34,11 @@ export type NodeType =
   | "caption"
   | "voiceSwap"
   | "soundEffects"
-  | "musicGenerate";
+  | "musicGenerate"
+  | "motionCapture"
+  | "remotion"
+  | "videoComposer"
+  | "greenScreen";
 
 // Aspect Ratios (supported by both Nano Banana and Nano Banana Pro)
 export type AspectRatio = "1:1" | "2:3" | "3:2" | "3:4" | "4:3" | "4:5" | "5:4" | "9:16" | "16:9" | "21:9";
@@ -394,6 +398,127 @@ export interface MusicGenerateNodeData extends BaseNodeData {
   error: string | null;
 }
 
+// Motion Capture Character Orientation
+export type CharacterOrientation = "image" | "video";
+
+// Motion Capture Node Data - Kling 2.6 Motion Control
+export interface MotionCaptureNodeData extends BaseNodeData {
+  referenceImage: string | null;   // Character to animate (from image input)
+  sourceVideo: string | null;      // Motion source (from video input)
+  outputVideo: string | null;      // Result video
+  lastFrame: string | null;        // Extracted last frame for chaining
+  characterOrientation: CharacterOrientation; // "image" or "video"
+  resolution: "720p" | "1080p";    // Output resolution
+  prompt: string;                  // Optional scene description
+  status: NodeStatus;
+  error: string | null;
+}
+
+// Remotion Template Types
+export type RemotionIntroTemplate = "none" | "logo-reveal" | "text-scale" | "slide-in" | "glitch";
+export type RemotionOutroTemplate = "none" | "cta-follow" | "cta-subscribe" | "fade-out" | "slide-out";
+export type RemotionOverlayAnimation = "pop" | "fade" | "slide-up" | "slide-down" | "slide-left" | "slide-right" | "bounce" | "typewriter";
+export type RemotionOverlayPosition = "top" | "center" | "bottom" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
+
+// Text overlay for Remotion
+export interface RemotionTextOverlay {
+  id: string;
+  text: string;
+  startTime: number;
+  duration: number;
+  animation: RemotionOverlayAnimation;
+  position: RemotionOverlayPosition;
+  fontSize?: number;
+  fontColor?: string;
+  fontFamily?: string;
+  strokeColor?: string;
+  strokeWidth?: number;
+  backgroundColor?: string | null;
+}
+
+// Remotion intro config
+export interface RemotionIntroConfig {
+  enabled: boolean;
+  template: RemotionIntroTemplate;
+  duration: number;
+  text?: string;
+  subtext?: string;
+  logoUrl?: string;
+  backgroundColor?: string;
+  textColor?: string;
+  accentColor?: string;
+}
+
+// Remotion outro config
+export interface RemotionOutroConfig {
+  enabled: boolean;
+  template: RemotionOutroTemplate;
+  duration: number;
+  text?: string;
+  subtext?: string;
+  handle?: string;
+  logoUrl?: string;
+  backgroundColor?: string;
+  textColor?: string;
+  accentColor?: string;
+}
+
+// Remotion Node Data - post-processing with intro/outro/overlays
+export interface RemotionNodeData extends BaseNodeData {
+  inputVideo: string | null;
+  outputVideo: string | null;
+  videoDuration: number | null;    // Duration of input video in seconds
+  intro: RemotionIntroConfig;
+  outro: RemotionOutroConfig;
+  overlays: RemotionTextOverlay[];
+  status: NodeStatus;
+  error: string | null;
+}
+
+// Video Composer Node Data - AI-generated videos using Remotion
+export interface VideoComposerNodeData extends BaseNodeData {
+  // Input assets (populated from connections)
+  inputVideos: string[];           // Up to 5 video data URLs
+  inputImages: string[];           // Up to 10 image data URLs
+  inputCode: string | null;        // Remotion TSX code from LLM
+
+  // Settings
+  duration: number;                // Target duration in seconds
+  aspectRatio: "9:16" | "16:9" | "1:1";
+  fps: number;
+
+  // Output
+  outputVideo: string | null;
+
+  // Status
+  status: NodeStatus;
+  error: string | null;
+}
+
+// Green Screen Node Data - automated green screen workflow
+export interface GreenScreenNodeData extends BaseNodeData {
+  // Input
+  inputVideo: string | null;       // Source video with person
+
+  // Intermediate outputs (for debugging/preview)
+  extractedFrame: string | null;   // First frame extracted from video
+  greenScreenImage: string | null; // NanoBanana output (person on green screen)
+
+  // Settings
+  prompt: string;                  // Custom prompt for green screen generation
+  resolution: "720p" | "1080p";    // Output resolution for motion capture
+  greenColor: string;              // Green screen color (default: #00FF00)
+
+  // Output
+  outputVideo: string | null;      // Final video (person on green screen, animated)
+  lastFrame: string | null;        // For chaining
+
+  // Status
+  status: NodeStatus;
+  error: string | null;
+  currentStep: "idle" | "extracting" | "generating" | "capturing" | "complete";
+}
+
 // Union of all node data types
 export type WorkflowNodeData =
   | ImageInputNodeData
@@ -413,7 +538,11 @@ export type WorkflowNodeData =
   | CaptionNodeData
   | VoiceSwapNodeData
   | SoundEffectsNodeData
-  | MusicGenerateNodeData;
+  | MusicGenerateNodeData
+  | MotionCaptureNodeData
+  | RemotionNodeData
+  | VideoComposerNodeData
+  | GreenScreenNodeData;
 
 // Workflow Node with typed data and optional groupId
 export type WorkflowNode = Node<WorkflowNodeData, NodeType> & {

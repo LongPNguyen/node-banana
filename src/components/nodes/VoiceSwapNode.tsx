@@ -91,7 +91,8 @@ export const VoiceSwapNode = memo(({ id, data, selected }: NodeProps<VoiceSwapNo
       return (sourceData.outputVideo as string) || (sourceData.video as string) || null;
     }
     if (sourceNode.type === "videoStitch" || sourceNode.type === "videoUpscale" ||
-        sourceNode.type === "audioProcess" || sourceNode.type === "caption" || sourceNode.type === "voiceSwap") {
+        sourceNode.type === "audioProcess" || sourceNode.type === "caption" ||
+        sourceNode.type === "voiceSwap" || sourceNode.type === "motionCapture") {
       return (sourceData.outputVideo as string) || null;
     }
     return null;

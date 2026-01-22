@@ -30,6 +30,10 @@ import {
   VoiceSwapNodeData,
   SoundEffectsNodeData,
   MusicGenerateNodeData,
+  MotionCaptureNodeData,
+  RemotionNodeData,
+  VideoComposerNodeData,
+  GreenScreenNodeData,
   WorkflowNodeData,
   ImageHistoryItem,
   WorkflowMetadata,
@@ -384,6 +388,76 @@ const createDefaultNodeData = (type: NodeType): WorkflowNodeData => {
         status: "idle",
         error: null,
       } as MusicGenerateNodeData;
+    case "motionCapture":
+      return {
+        referenceImage: null,
+        sourceVideo: null,
+        outputVideo: null,
+        lastFrame: null,
+        characterOrientation: "image",
+        resolution: "720p",
+        prompt: "",
+        status: "idle",
+        error: null,
+      } as MotionCaptureNodeData;
+    case "remotion":
+      return {
+        inputVideo: null,
+        outputVideo: null,
+        videoDuration: null,
+        intro: {
+          enabled: false,
+          template: "none",
+          duration: 3,
+          text: "",
+          subtext: "",
+          logoUrl: "",
+          backgroundColor: "#000000",
+          textColor: "#FFFFFF",
+          accentColor: "#3B82F6",
+        },
+        outro: {
+          enabled: false,
+          template: "none",
+          duration: 3,
+          text: "",
+          subtext: "",
+          handle: "",
+          logoUrl: "",
+          backgroundColor: "#000000",
+          textColor: "#FFFFFF",
+          accentColor: "#3B82F6",
+        },
+        overlays: [],
+        status: "idle",
+        error: null,
+      } as RemotionNodeData;
+    case "videoComposer":
+      return {
+        inputVideos: [],
+        inputImages: [],
+        inputCode: null,
+        duration: 10,
+        aspectRatio: "9:16",
+        fps: 30,
+        outputVideo: null,
+        status: "idle",
+        error: null,
+      } as VideoComposerNodeData;
+    case "greenScreen":
+      return {
+        inputVideo: null,
+        extractedFrame: null,
+        greenScreenImage: null,
+        prompt: "same person standing on solid bright green screen background, full body visible, same pose, same clothing, same appearance, studio lighting",
+        resolution: "720p",
+        greenColor: "#00FF00",
+        outputVideo: null,
+        lastFrame: null,
+        status: "idle",
+        error: null,
+        currentStep: "idle",
+      } as GreenScreenNodeData;
   }
 };
 
@@ -1181,6 +1255,10 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => {
       voiceSwap: { width: 340, height: 400 },
       soundEffects: { width: 320, height: 320 },
       musicGenerate: { width: 320, height: 380 },
+      motionCapture: { width: 380, height: 520 },
+      remotion: { width: 380, height: 600 },
+      videoComposer: { width: 380, height: 520 },
+      greenScreen: { width: 380, height: 580 },
     };
 
     const { width, height } = defaultDimensions[type];
@@ -1486,6 +1564,12 @@ export const useWorkflowStore = create<WorkflowStore>()((set, get) => {
             video = (sourceNode.data as AudioProcessNodeData).outputVideo;
           } else if (sourceNode.type === "caption") {
             video = (sourceNode.data as CaptionNodeData).outputVideo;
+          } else if (sourceNode.type === "voiceSwap") {
+            video = (sourceNode.data as VoiceSwapNodeData).outputVideo;
+          } else if (sourceNode.type === "motionCapture") {
+            video = (sourceNode.data as MotionCaptureNodeData).outputVideo;
+          } else if (sourceNode.type === "remotion") {
+            video = (sourceNode.data as RemotionNodeData).outputVideo;
           }
         }
 

@@ -255,7 +255,8 @@ export const CaptionNode = memo(({ id, data, selected }: NodeProps<CaptionNodeTy
       return (sourceData.outputVideo as string) || (sourceData.video as string) || null;
     }
     if (sourceNode.type === "videoStitch" || sourceNode.type === "videoUpscale" ||
-        sourceNode.type === "audioProcess" || sourceNode.type === "caption") {
+        sourceNode.type === "audioProcess" || sourceNode.type === "caption" ||
+        sourceNode.type === "voiceSwap" || sourceNode.type === "motionCapture") {
       return (sourceData.outputVideo as string) || null;
     }
     return null;
@@ -468,32 +469,31 @@ export const CaptionNode = memo(({ id, data, selected }: NodeProps<CaptionNodeTy
           </div>
         )}
 
-        {/* Style Panel */}
-        {hasTranscription && (
-          <div className="space-y-2">
-            {/* Tab Buttons */}
-            <div className="flex gap-1">
-              <button
-                onClick={() => setActiveTab("presets")}
-                className={`nodrag flex-1 py-1 text-[9px] font-medium rounded transition-colors ${
-                  activeTab === "presets"
-                    ? "bg-amber-600 text-white"
-                    : "bg-neutral-700 text-neutral-400 hover:bg-neutral-600"
-                }`}
-              >
-                Presets
-              </button>
-              <button
-                onClick={() => setActiveTab("style")}
-                className={`nodrag flex-1 py-1 text-[9px] font-medium rounded transition-colors ${
-                  activeTab === "style"
-                    ? "bg-amber-600 text-white"
-                    : "bg-neutral-700 text-neutral-400 hover:bg-neutral-600"
-                }`}
-              >
-                Custom Style
-              </button>
-            </div>
+        {/* Style Panel - Always visible so users can preset styles */}
+        <div className="space-y-2">
+          {/* Tab Buttons */}
+          <div className="flex gap-1">
+            <button
+              onClick={() => setActiveTab("presets")}
+              className={`nodrag flex-1 py-1 text-[9px] font-medium rounded transition-colors ${
+                activeTab === "presets"
+                  ? "bg-amber-600 text-white"
+                  : "bg-neutral-700 text-neutral-400 hover:bg-neutral-600"
+              }`}
+            >
+              Presets
+            </button>
+            <button
+              onClick={() => setActiveTab("style")}
+              className={`nodrag flex-1 py-1 text-[9px] font-medium rounded transition-colors ${
+                activeTab === "style"
+                  ? "bg-amber-600 text-white"
+                  : "bg-neutral-700 text-neutral-400 hover:bg-neutral-600"
+              }`}
+            >
+              Custom Style
+            </button>
+          </div>
 
             {/* Presets Grid */}
             {activeTab === "presets" && (
@@ -731,7 +731,6 @@ export const CaptionNode = memo(({ id, data, selected }: NodeProps<CaptionNodeTy
               </div>
             )}
           </div>
-        )}
 
         {/* Generate Button */}
         {hasTranscription && (

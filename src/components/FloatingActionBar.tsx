@@ -5,15 +5,6 @@ import { useWorkflowStore } from "@/store/workflowStore";
 import { NodeType } from "@/types";
 import { useReactFlow } from "@xyflow/react";
 
-// Get the center of the visible viewport in flow coordinates
-function getViewportCenter(getViewport: () => { x: number; y: number; zoom: number }) {
-  const viewport = getViewport();
-  // Calculate the center of what's visible in flow coordinates
-  const centerX = (-viewport.x + window.innerWidth / 2) / viewport.zoom;
-  const centerY = (-viewport.y + window.innerHeight / 2) / viewport.zoom;
-  return { x: centerX, y: centerY };
-}
-
 interface NodeButtonProps {
   type: NodeType;
   label: string;
@@ -21,10 +12,20 @@ interface NodeButtonProps {
 
 function NodeButton({ type, label }: NodeButtonProps) {
   const addNode = useWorkflowStore((state) => state.addNode);
-  const { getViewport } = useReactFlow();
+  const sidebarOpen = useWorkflowStore((state) => state.sidebarOpen);
+  const { screenToFlowPosition } = useReactFlow();
 
   const handleClick = () => {
-    const center = getViewportCenter(getViewport);
+    // Account for sidebar width (256px = 64 * 4 from ml-64 class)
+    const sidebarWidth = sidebarOpen ? 256 : 0;
+
+    // Calculate the center of the visible screen area
+    const screenCenterX = sidebarWidth + (window.innerWidth - sidebarWidth) / 2;
+    const screenCenterY = window.innerHeight / 2;
+
+    // Convert screen center to flow coordinates
+    const center = screenToFlowPosition({ x: screenCenterX, y: screenCenterY });
+
     // Add small random offset to avoid stacking nodes exactly on top of each other
     const position = {
       x: center.x + Math.random() * 100 - 50,
@@ -55,7 +56,8 @@ function ToolsComboButton() {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const addNode = useWorkflowStore((state) => state.addNode);
-  const { getViewport } = useReactFlow();
+  const sidebarOpen = useWorkflowStore((state) => state.sidebarOpen);
+  const { screenToFlowPosition } = useReactFlow();
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -74,7 +76,12 @@ function ToolsComboButton() {
   }, [isOpen]);
 
   const handleAddNode = (type: NodeType) => {
-    const center = getViewportCenter(getViewport);
+    // Account for sidebar width
+    const sidebarWidth = sidebarOpen ? 256 : 0;
+    const screenCenterX = sidebarWidth + (window.innerWidth - sidebarWidth) / 2;
+    const screenCenterY = window.innerHeight / 2;
+    const center = screenToFlowPosition({ x: screenCenterX, y: screenCenterY });
+
     const position = {
       x: center.x + Math.random() * 100 - 50,
       y: center.y + Math.random() * 100 - 50,
@@ -87,7 +94,8 @@ function ToolsComboButton() {
   const handleDragStart = (event: React.DragEvent, type: NodeType) => {
     event.dataTransfer.setData("application/node-type", type);
     event.dataTransfer.effectAllowed = "copy";
-    setIsOpen(false);
+    // Delay closing to ensure drag data is set properly
+    setTimeout(() => setIsOpen(false), 0);
   };
 
   return (
@@ -187,6 +195,50 @@ function ToolsComboButton() {
             </svg>
             Voice Swap
           </button>
+          <button
+            onClick={() => handleAddNode("motionCapture")}
+            draggable
+            onDragStart={(e) => handleDragStart(e, "motionCapture")}
+            className="w-full px-3 py-2 text-left text-[11px] font-medium text-neutral-300 hover:bg-neutral-700 hover:text-neutral-100 transition-colors flex items-center gap-2 cursor-grab active:cursor-grabbing"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+            </svg>
+            Motion Capture
+          </button>
+          <button
+            onClick={() => handleAddNode("remotion")}
+            draggable
+            onDragStart={(e) => handleDragStart(e, "remotion")}
+            className="w-full px-3 py-2 text-left text-[11px] font-medium text-neutral-300 hover:bg-neutral-700 hover:text-neutral-100 transition-colors flex items-center gap-2 cursor-grab active:cursor-grabbing"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 01-1.125-1.125M3.375 19.5h7.5c.621 0 1.125-.504 1.125-1.125m-9.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-7.5A1.125 1.125 0 0112 18.375m9.75-12.75c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125m19.5 0v1.5c0 .621-.504 1.125-1.125 1.125M2.25 5.625v1.5c0 .621.504 1.125 1.125 1.125m0 0h17.25m-17.25 0h7.5c.621 0 1.125.504 1.125 1.125M3.375 8.25c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125m17.25-3.75h-7.5A1.125 1.125 0 0012 9.375m9.75-1.125c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m-17.25 0h7.5m-7.5 0c-.621 0-1.125.504-1.125 1.125M12 10.875v-1.5m0 1.5c0 .621-.504 1.125-1.125 1.125M12 10.875c0 .621.504 1.125 1.125 1.125m-2.25 0c.621 0 1.125.504 1.125 1.125M10.875 12h2.25m-2.25 0c-.621 0-1.125.504-1.125 1.125M12 12v1.5" />
+            </svg>
+            Intro/Outro
+          </button>
+          <button
+            onClick={() => handleAddNode("videoComposer")}
+            draggable
+            onDragStart={(e) => handleDragStart(e, "videoComposer")}
+            className="w-full px-3 py-2 text-left text-[11px] font-medium text-neutral-300 hover:bg-neutral-700 hover:text-neutral-100 transition-colors flex items-center gap-2 cursor-grab active:cursor-grabbing"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 01-1.125-1.125M3.375 19.5h7.5c.621 0 1.125-.504 1.125-1.125m-9.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-7.5A1.125 1.125 0 0112 18.375m9.75-12.75c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125m19.5 0v1.5c0 .621-.504 1.125-1.125 1.125M2.25 5.625v1.5c0 .621.504 1.125 1.125 1.125m0 0h17.25m-17.25 0h7.5c.621 0 1.125.504 1.125 1.125M3.375 8.25c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125m17.25-3.75h-7.5A1.125 1.125 0 0012 9.375m9.75-1.125c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125" />
+            </svg>
+            Video Composer
+          </button>
+          <button
+            onClick={() => handleAddNode("greenScreen")}
+            draggable
+            onDragStart={(e) => handleDragStart(e, "greenScreen")}
+            className="w-full px-3 py-2 text-left text-[11px] font-medium text-neutral-300 hover:bg-neutral-700 hover:text-neutral-100 transition-colors flex items-center gap-2 cursor-grab active:cursor-grabbing"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+            </svg>
+            Green Screen
+          </button>
         </div>
       )}
     </div>
@@ -197,7 +249,8 @@ function GenerateComboButton() {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const addNode = useWorkflowStore((state) => state.addNode);
-  const { getViewport } = useReactFlow();
+  const sidebarOpen = useWorkflowStore((state) => state.sidebarOpen);
+  const { screenToFlowPosition } = useReactFlow();
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -216,7 +269,12 @@ function GenerateComboButton() {
   }, [isOpen]);
 
   const handleAddNode = (type: NodeType) => {
-    const center = getViewportCenter(getViewport);
+    // Account for sidebar width
+    const sidebarWidth = sidebarOpen ? 256 : 0;
+    const screenCenterX = sidebarWidth + (window.innerWidth - sidebarWidth) / 2;
+    const screenCenterY = window.innerHeight / 2;
+    const center = screenToFlowPosition({ x: screenCenterX, y: screenCenterY });
+
     const position = {
       x: center.x + Math.random() * 100 - 50,
       y: center.y + Math.random() * 100 - 50,
@@ -229,7 +287,8 @@ function GenerateComboButton() {
   const handleDragStart = (event: React.DragEvent, type: NodeType) => {
     event.dataTransfer.setData("application/node-type", type);
     event.dataTransfer.effectAllowed = "copy";
-    setIsOpen(false);
+    // Delay closing to ensure drag data is set properly
+    setTimeout(() => setIsOpen(false), 0);
   };
 
   return (
@@ -393,6 +452,7 @@ export function FloatingActionBar() {
     <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50">
       <div className="flex items-center gap-0.5 bg-neutral-800/95 backdrop-blur-sm rounded-lg shadow-lg border border-neutral-700/80 px-1.5 py-1">
         <NodeButton type="imageInput" label="Image" />
+        <NodeButton type="videoInput" label="Video" />
         <NodeButton type="annotation" label="Annotate" />
         <NodeButton type="prompt" label="Prompt" />
         <GenerateComboButton />

@@ -15,4 +15,8 @@ export { CaptionNode } from "./CaptionNode";
 export { VoiceSwapNode } from "./VoiceSwapNode";
 export { SoundEffectsNode } from "./SoundEffectsNode";
 export { MusicGenerateNode } from "./MusicGenerateNode";
+export { MotionCaptureNode } from "./MotionCaptureNode";
+export { RemotionNode } from "./RemotionNode";
+export { VideoComposerNode } from "./VideoComposerNode";
+export { GreenScreenNode } from "./GreenScreenNode";
 export { ExecuteButton } from "./ExecuteButton";

@@ -30,7 +30,9 @@ export const AudioProcessNode = memo(({ id, data, selected }: NodeProps<AudioPro
     if (sourceNode.type === "videoGenerate" || sourceNode.type === "videoInput") {
       return (sourceData.outputVideo as string) || (sourceData.video as string) || null;
     }
-    if (sourceNode.type === "videoStitch" || sourceNode.type === "videoUpscale" || sourceNode.type === "audioProcess" || sourceNode.type === "caption") {
+    if (sourceNode.type === "videoStitch" || sourceNode.type === "videoUpscale" ||
+        sourceNode.type === "audioProcess" || sourceNode.type === "caption" ||
+        sourceNode.type === "voiceSwap" || sourceNode.type === "motionCapture") {
       return (sourceData.outputVideo as string) || null;
     }
     return null;

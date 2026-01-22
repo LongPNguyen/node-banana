@@ -30,6 +30,10 @@ const VALID_NODE_TYPES: NodeType[] = [
   "voiceSwap",
   "soundEffects",
   "musicGenerate",
+  "motionCapture",
+  "remotion",
+  "videoComposer",
+  "greenScreen",
 ];
 
 const VALID_HANDLE_TYPES = ["image", "text", "reference", "video", "audio"];
@@ -54,6 +58,10 @@ const DEFAULT_DIMENSIONS: Record<NodeType, { width: number; height: number }> = 
   voiceSwap: { width: 340, height: 400 },
   soundEffects: { width: 320, height: 320 },
   musicGenerate: { width: 320, height: 380 },
+  motionCapture: { width: 380, height: 520 },
+  remotion: { width: 380, height: 600 },
+  videoComposer: { width: 380, height: 520 },
+  greenScreen: { width: 380, height: 580 },
 };
 
 /**
@@ -401,6 +409,76 @@ function createDefaultNodeData(type: NodeType): WorkflowNodeData {
         outputAudio: null,
         status: "idle",
         error: null,
+      };
+    case "motionCapture":
+      return {
+        referenceImage: null,
+        sourceVideo: null,
+        outputVideo: null,
+        lastFrame: null,
+        characterOrientation: "image",
+        resolution: "720p",
+        prompt: "",
+        status: "idle",
+        error: null,
+      };
+    case "remotion":
+      return {
+        inputVideo: null,
+        outputVideo: null,
+        videoDuration: null,
+        intro: {
+          enabled: false,
+          template: "none",
+          duration: 3,
+          text: "",
+          subtext: "",
+          logoUrl: "",
+          backgroundColor: "#000000",
+          textColor: "#FFFFFF",
+          accentColor: "#3B82F6",
+        },
+        outro: {
+          enabled: false,
+          template: "none",
+          duration: 3,
+          text: "",
+          subtext: "",
+          handle: "",
+          logoUrl: "",
+          backgroundColor: "#000000",
+          textColor: "#FFFFFF",
+          accentColor: "#3B82F6",
+        },
+        overlays: [],
+        status: "idle",
+        error: null,
+      };
+    case "videoComposer":
+      return {
+        inputVideos: [],
+        inputImages: [],
+        inputCode: null,
+        duration: 10,
+        aspectRatio: "9:16",
+        fps: 30,
+        outputVideo: null,
+        status: "idle",
+        error: null,
+      };
+    case "greenScreen":
+      return {
+        inputVideo: null,
+        extractedFrame: null,
+        greenScreenImage: null,
+        prompt: "same person standing on solid bright green screen background, full body visible, same pose, same clothing, same appearance, studio lighting",
+        resolution: "720p",
+        greenColor: "#00FF00",
+        outputVideo: null,
+        lastFrame: null,
+        status: "idle",
+        error: null,
+        currentStep: "idle",
       };
   }
 }
